@@ -1,0 +1,11 @@
+[package]
+name = "ptx_tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libloading = "0.8"
+static_assertions = "1.1.0"
+num = "0.4"
+rand = "0.8.4"
+rand_xorshift = "0.3.0"
