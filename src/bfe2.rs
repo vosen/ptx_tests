@@ -5,7 +5,7 @@ use rand_xorshift::XorShiftRng;
 use crate::cuda::*;
 use std::{mem, ptr};
 
-static PTX: &str = include_str!("bfe.ptx");
+pub static PTX: &str = include_str!("bfe2.ptx");
 
 pub(super) fn u32() -> bool {
     test::<u32>()

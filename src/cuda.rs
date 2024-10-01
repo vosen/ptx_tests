@@ -110,4 +110,5 @@ cuda_impl! {
     "system" fn cuMemFree_v2(dptr: CUdeviceptr) -> CUresult;
     "system" fn cuModuleUnload(hmod: CUmodule) -> CUresult;
     "system" fn cuCtxDestroy_v2(ctx: CUcontext) -> CUresult;
+    "system" fn cuMemGetInfo_v2(free: *mut usize, total: *mut usize) -> CUresult;
 }
