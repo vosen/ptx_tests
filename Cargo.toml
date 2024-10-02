@@ -9,3 +9,10 @@ static_assertions = "1.1.0"
 num = "0.4"
 rand = "0.8.4"
 rand_xorshift = "0.3.0"
+argh = "0.1.12"
+bpaf = { version = "0.9.14", features = ["derive"] }
+regex = "1.11.0"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"

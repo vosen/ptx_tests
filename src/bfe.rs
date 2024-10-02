@@ -1,106 +1,132 @@
-use num::{cast::AsPrimitive, Bounded, Num, PrimInt};
-use rand::{Rng, SeedableRng};
-use rand_xorshift::XorShiftRng;
+use crate::test::{self, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
+use num::{traits::FromBytes, Zero};
+use rand::{distributions::Standard, prelude::Distribution, Rng};
+use std::fmt::Debug;
+use std::mem;
 
-use crate::cuda::*;
-use std::{mem, ptr};
+pub static PTX: &str = include_str!("bfe.ptx");
 
-static PTX: &str = include_str!("bfe.ptx");
-
-pub(super) fn u32() -> bool {
-    test::<u32>()
+pub(super) fn rng_u32() -> TestCase {
+    bfe_rng::<u32>()
 }
-pub(super) fn s32() -> bool {
-    test::<i32>()
+pub(super) fn rng_s32() -> TestCase {
+    bfe_rng::<i32>()
 }
-pub(super) fn u64() -> bool {
-    test::<u64>()
+pub(super) fn rng_u64() -> TestCase {
+    bfe_rng::<u64>()
 }
-pub(super) fn s64() -> bool {
-    test::<i64>()
+pub(super) fn rng_s64() -> TestCase {
+    bfe_rng::<i64>()
 }
 
-const RANDOM_ELEMENTS_COUNT: usize = 2usize.pow(14);
-const THREADS: usize = 2usize.pow(8) * 2usize.pow(8);
-const SEED: u64 = 0x761194f3027874ef;
-
-fn test<T: crate::test::PtxScalar>() -> bool
+fn bfe_rng<T: PtxScalar>() -> TestCase
 where
-    rand::distributions::Standard: rand::distributions::Distribution<T>,
+    Standard: Distribution<T>,
 {
-    let mut src = PTX
-        .replace("<TYPE>", T::name())
-        .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-    src.push('\0');
-    let cuda = Cuda::new();
-    unsafe { cuda.cuInit(0) }.unwrap();
-    let mut ctx = ptr::null_mut();
-    unsafe { cuda.cuCtxCreate_v2(&mut ctx, 0, 0) }.unwrap();
-    let mut module = ptr::null_mut();
-    unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
-    let mut inputs = Vec::with_capacity(3 + RANDOM_ELEMENTS_COUNT);
-    inputs.push(T::zero());
-    inputs.push(T::min_value());
-    inputs.push(T::max_value());
-    let mut rng = XorShiftRng::seed_from_u64(SEED);
-    for _ in 0..RANDOM_ELEMENTS_COUNT {
-        inputs.push(rng.gen());
+    TestCase {
+        test: test::run_random::<Bfe<T>>,
+        name: format!("bfe_rng_{}", T::name()),
     }
-    let mut dev_input = unsafe { mem::zeroed() };
-    unsafe { cuda.cuMemAlloc_v2(&mut dev_input, inputs.len() * mem::size_of::<T>()) }.unwrap();
-    unsafe {
-        cuda.cuMemcpyHtoD_v2(
-            dev_input,
-            inputs.as_ptr() as _,
-            inputs.len() * mem::size_of::<T>(),
-        )
+}
+
+pub struct Bfe<T: PtxScalar> {
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: PtxScalar> TestCommon for Bfe<T> {
+    type Input = (T, u32, u32);
+
+    type Output = T;
+
+    fn ptx() -> String {
+        let mut src = PTX
+            .replace("<TYPE>", T::name())
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
+        src.push('\0');
+        src
     }
-    .unwrap();
-    let mut dev_output = unsafe { mem::zeroed() };
-    unsafe {
-        cuda.cuMemAlloc_v2(
-            &mut dev_output,
-            THREADS * inputs.len() * mem::size_of::<T>(),
-        )
-    }
-    .unwrap();
-    let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"bfe".as_ptr()) }.unwrap();
-    let count_elements = inputs.len() as u64;
-    let mut args = [&dev_input, &count_elements, &dev_output];
-    unsafe {
-        cuda.cuLaunchKernel(
-            kernel,
-            (THREADS / 128) as u32,
-            1,
-            1,
-            128,
-            1,
-            1,
-            0,
-            0 as _,
-            args.as_mut_ptr() as _,
-            ptr::null_mut(),
-        )
-    }
-    .unwrap();
-    let mut result = vec![T::zero(); THREADS * inputs.len()];
-    unsafe {
-        cuda.cuMemcpyDtoH_v2(
-            result.as_mut_ptr() as _,
-            dev_output,
-            result.len() * mem::size_of::<T>(),
-        )
-    }
-    .unwrap();
-    unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
-    unsafe { cuda.cuMemFree_v2(dev_input) }.unwrap();
-    unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
-    unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    for global_id in 0..THREADS {
-        for (i, value) in inputs.iter().copied().enumerate() {
-            todo!()
+
+    fn host_verify(input: Self::Input, output: Self::Output) -> bool {
+        fn bfe_host<T: PtxScalar>(value: T, pos: u32, len: u32) -> T {
+            let pos = if mem::size_of::<T>() == 4 {
+                pos.to_le_bytes()[0] as usize
+            } else {
+                pos as usize
+            };
+            let len = if mem::size_of::<T>() == 4 {
+                len.to_le_bytes()[0] as usize
+            } else {
+                len as usize
+            };
+            let msb = mem::size_of::<T>() * 8 - 1;
+            let sbit = if T::unsigned() || len == 0 {
+                false
+            } else {
+                get_bit(value, Ord::min(pos + len - 1, msb))
+            };
+            let mut d = <T as Zero>::zero();
+            for i in 0..=msb {
+                let bit = if i < len && pos + i <= msb {
+                    get_bit(value, pos + i)
+                } else {
+                    sbit
+                };
+                set_bit(&mut d, i, bit)
+            }
+            d
         }
+        let (value, len, pos) = input;
+        bfe_host(value, len, pos) == output
     }
-    true
+}
+
+impl<T: PtxScalar + FromBytes> RangeTest for Bfe<T>
+where
+    for<'a> T::Bytes: TryFrom<&'a [u8]>,
+    for<'a> <<T as FromBytes>::Bytes as TryFrom<&'a [u8]>>::Error: Debug,
+{
+    fn generate(input: u32) -> Self::Input {
+        let len = input.to_le_bytes()[0] as u32;
+        let pos = input.to_le_bytes()[1] as u32;
+        let value = [
+            input.to_le_bytes()[3],
+            input.to_le_bytes()[2],
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        ];
+        let value = T::from_be_bytes(&T::Bytes::try_from(&value).unwrap());
+        (value, pos, len)
+    }
+}
+
+impl<T: PtxScalar> RandomTest for Bfe<T>
+where
+    Standard: Distribution<T>,
+{
+    fn generate<R: Rng + ?Sized>(rng: &mut R) -> Self::Input {
+        let value = rng.gen();
+        let len = (rng.gen::<u16>() & 0x1ff) as u32;
+        let pos = (rng.gen::<u16>() & 0x1ff) as u32;
+        (value, len, pos)
+    }
+}
+
+fn get_bit<T: PtxScalar>(value: T, n: usize) -> bool {
+    assert!(n < mem::size_of::<T>() * 8);
+    let value: usize = value.as_();
+    value & (1 << n) != 0
+}
+
+fn set_bit<T: PtxScalar>(value: &mut T, n: usize, bit: bool) {
+    assert!(n < mem::size_of::<T>() * 8);
+    let mask = T::one().unsigned_shl(n as u32);
+    if bit {
+        *value = value.bitor(mask);
+    } else {
+        *value = value.bitand(mask.not());
+    }
 }

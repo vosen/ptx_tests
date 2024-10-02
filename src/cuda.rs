@@ -41,9 +41,8 @@ pub struct Cuda {
 }
 
 impl Cuda {
-    pub fn new() -> Self {
-        let library =
-            unsafe { libloading::Library::new(r"C:\Windows\System32\nvcuda.dll").unwrap() };
+    pub fn new(path: String) -> Self {
+        let library = unsafe { libloading::Library::new(path).unwrap() };
         Self { library }
     }
 }
@@ -86,8 +85,8 @@ cuda_impl! {
         srcHost: *const ::std::os::raw::c_void,
         ByteCount: usize,
     ) -> CUresult;
-    "system" fn cuMemsetD8_v2(dstDevice: CUdeviceptr, uc: ::std::os::raw::c_uchar, N: usize)
-        -> CUresult;
+    //"system" fn cuMemsetD8_v2(dstDevice: CUdeviceptr, uc: ::std::os::raw::c_uchar, N: usize)
+    //    -> CUresult;
     "system" fn cuLaunchKernel(
         f: CUfunction,
         gridDimX: ::std::os::raw::c_uint,
@@ -109,6 +108,6 @@ cuda_impl! {
     "system" fn cuStreamSynchronize(hStream: CUstream) -> CUresult;
     "system" fn cuMemFree_v2(dptr: CUdeviceptr) -> CUresult;
     "system" fn cuModuleUnload(hmod: CUmodule) -> CUresult;
-    "system" fn cuCtxDestroy_v2(ctx: CUcontext) -> CUresult;
+    //"system" fn cuCtxDestroy_v2(ctx: CUcontext) -> CUresult;
     "system" fn cuMemGetInfo_v2(free: *mut usize, total: *mut usize) -> CUresult;
 }

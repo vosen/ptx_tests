@@ -1,27 +1,27 @@
-use num::{cast::AsPrimitive, traits::FromBytes, Bounded, Num, PrimInt, Zero};
-use rand::{distributions::Standard, prelude::Distribution, Rng, SeedableRng};
+use num::{cast::AsPrimitive, Bounded, Num, PrimInt, Zero};
+use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{fmt::Debug, mem, ptr, u32};
 
 use crate::cuda::Cuda;
 
-trait TestCommon {
+pub trait TestCommon {
     type Input: OnDevice;
     type Output: OnDevice;
     fn host_verify(input: Self::Input, output: Self::Output) -> bool;
     fn ptx() -> String;
 }
 
-trait RangeTest: TestCommon {
+pub trait RangeTest: TestCommon {
     const MAX_VALUE: u32 = u32::MAX;
     fn generate(input: u32) -> Self::Input;
 }
 
-trait RandomTest: TestCommon {
+pub trait RandomTest: TestCommon {
     fn generate<R: Rng>(rng: &mut R) -> Self::Input;
 }
 
-trait OnDevice: Copy + Debug {
+pub trait OnDevice: Copy + Debug {
     const COMPONENTS: usize;
     fn write(self, buffers: &mut [Vec<u8>]);
     fn read(buffers: &[Vec<u8>], index: usize) -> Self;
@@ -181,84 +181,6 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice> OnDevice for (X, Y, Z) {
     }
 }
 
-pub struct Bfe<T: PtxScalar> {
-    _phantom: std::marker::PhantomData<T>,
-}
-
-impl<T: PtxScalar> TestCommon for Bfe<T> {
-    type Input = (T, u32, u32);
-
-    type Output = T;
-
-    fn ptx() -> String {
-        let mut src = crate::bfe2::PTX
-            .replace("<TYPE>", T::name())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
-    }
-
-    fn host_verify(input: Self::Input, output: Self::Output) -> bool {
-        fn bfe_host<T: PtxScalar>(value: T, pos: u32, len: u32) -> T {
-            let pos = pos.to_le_bytes()[0] as usize;
-            let len = len.to_le_bytes()[0] as usize;
-            let msb = mem::size_of::<T>() * 8 - 1;
-            let sbit = if T::unsigned() || len == 0 {
-                false
-            } else {
-                get_bit(value, Ord::min(pos + len - 1, pos))
-            };
-            let mut d = <T as Zero>::zero();
-            for i in 0..=msb {
-                let bit = if i < len && pos + i <= msb {
-                    get_bit(value, pos + i)
-                } else {
-                    sbit
-                };
-                set_bit(&mut d, i, bit)
-            }
-            d
-        }
-        let (value, len, pos) = input;
-        bfe_host(value, len, pos) == output
-    }
-}
-
-impl<T: PtxScalar + FromBytes> RangeTest for Bfe<T>
-where
-    for<'a> T::Bytes: TryFrom<&'a [u8]>,
-    for<'a> <<T as FromBytes>::Bytes as TryFrom<&'a [u8]>>::Error: Debug,
-{
-    fn generate(input: u32) -> Self::Input {
-        let len = input.to_le_bytes()[0] as u32;
-        let pos = input.to_le_bytes()[1] as u32;
-        let value = [
-            input.to_le_bytes()[3],
-            input.to_le_bytes()[2],
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        ];
-        let value = T::from_be_bytes(&T::Bytes::try_from(&value).unwrap());
-        (value, pos, len)
-    }
-}
-
-impl<T: PtxScalar> RandomTest for Bfe<T>
-where
-    Standard: Distribution<T>,
-{
-    fn generate<R: Rng + ?Sized>(rng: &mut R) -> Self::Input {
-        let value = rng.gen();
-        let len = rng.gen::<u32>();
-        let pos = rng.gen::<u32>();
-        (value, len, pos)
-    }
-}
-
 pub trait PtxScalar:
     Copy + Num + Bounded + PrimInt + AsPrimitive<usize> + Debug + OnDevice
 {
@@ -292,31 +214,11 @@ impl PtxScalar for i64 {
     }
 }
 
-fn get_bit<T: PtxScalar>(value: T, n: usize) -> bool {
-    assert!(n < mem::size_of::<T>() * 8);
-    let value: usize = value.as_();
-    value & (1 << n) != 0
-}
-
-fn set_bit<T: PtxScalar>(value: &mut T, n: usize, bit: bool) {
-    assert!(n < mem::size_of::<T>() * 8);
-    let mask = T::one().unsigned_shl(n as u32);
-    if bit {
-        *value = value.bitor(mask);
-    } else {
-        *value = value.bitand(mask.not());
-    }
-}
-
 const SEED: u64 = 0x761194f3027874ef;
 const GROUP_SIZE: usize = 128;
 
-pub fn run_random<T: RandomTest>() -> bool {
-    let mut src = T::ptx();
-    let cuda = Cuda::new();
-    unsafe { cuda.cuInit(0) }.unwrap();
-    let mut ctx = ptr::null_mut();
-    unsafe { cuda.cuCtxCreate_v2(&mut ctx, 0, 0) }.unwrap();
+pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
+    let src = T::ptx();
     let mut module = ptr::null_mut();
     unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
     let mut kernel = ptr::null_mut();
@@ -332,8 +234,9 @@ pub fn run_random<T: RandomTest>() -> bool {
     let iterations = (required_memory / max_memory).max(1);
     let memory_batch_size =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
+    let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
+    let mut result = vec![T::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
-        let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
         assert_eq!(T::Output::COMPONENTS, 1);
         let memory_batch_size = if iteration == iterations - 1 {
             required_memory - (memory_batch_size * (iterations - 1))
@@ -341,9 +244,13 @@ pub fn run_random<T: RandomTest>() -> bool {
             memory_batch_size
         };
         let element_batch_size = memory_batch_size / element_size;
+        for vec in inputs.iter_mut() {
+            vec.clear();
+        }
         for _ in 0..element_batch_size {
             T::generate(&mut rng).write(&mut inputs);
         }
+        result.resize(element_batch_size, T::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -379,7 +286,6 @@ pub fn run_random<T: RandomTest>() -> bool {
         }
         .unwrap();
         unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
-        let mut result = vec![T::Output::zero(); element_batch_size];
         unsafe {
             cuda.cuMemcpyDtoH_v2(
                 result.as_mut_ptr() as _,
@@ -392,7 +298,10 @@ pub fn run_random<T: RandomTest>() -> bool {
             let value = T::Input::read(&inputs, i);
             let result = result;
             if !T::host_verify(value, result) {
-                panic! {"Mismatch for value {:?} and result {:?}", value, result};
+                return Err(TestError {
+                    input: format!("{:?}", value),
+                    output: format!("{:?}", result),
+                });
             }
         }
         for devptr in dev_inputs {
@@ -400,9 +309,20 @@ pub fn run_random<T: RandomTest>() -> bool {
         }
         unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
-    true
+    unsafe { cuda.cuModuleUnload(module) }.unwrap();
+    Ok(())
 }
 
 fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
+}
+
+pub struct TestCase {
+    pub test: fn(cuda: &Cuda) -> Result<(), TestError>,
+    pub name: String,
+}
+
+pub struct TestError {
+    pub input: String,
+    pub output: String,
 }
