@@ -46,7 +46,7 @@ impl<T: PtxScalar> TestCommon for Bfe<T> {
         src
     }
 
-    fn host_verify(input: Self::Input, output: Self::Output) -> bool {
+    fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         fn bfe_host<T: PtxScalar>(value: T, pos: u32, len: u32) -> T {
             let pos = if mem::size_of::<T>() == 4 {
                 pos.to_le_bytes()[0] as usize
@@ -76,7 +76,12 @@ impl<T: PtxScalar> TestCommon for Bfe<T> {
             d
         }
         let (value, len, pos) = input;
-        bfe_host(value, len, pos) == output
+        let expected = bfe_host(value, len, pos);
+        if expected == output {
+            Ok(())
+        } else {
+            Err(expected)
+        }
     }
 }
 

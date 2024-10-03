@@ -65,8 +65,8 @@ fn run(args: Arguments) -> i32 {
                     Ok(()) => println!("{}: OK", t.name),
                     Err(e) => {
                         println!(
-                            "{}: FAIL: Input {} and output {}",
-                            t.name, e.input, e.output
+                            "{}: FAIL: Input {}, computed {}, expected {}",
+                            t.name, e.input, e.output, e.expected
                         );
                         failures += 1;
                     }

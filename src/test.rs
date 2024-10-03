@@ -8,7 +8,7 @@ use crate::cuda::Cuda;
 pub trait TestCommon {
     type Input: OnDevice;
     type Output: OnDevice;
-    fn host_verify(input: Self::Input, output: Self::Output) -> bool;
+    fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
     fn ptx() -> String;
 }
 
@@ -224,15 +224,16 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
     let mut kernel = ptr::null_mut();
     unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"bfe".as_ptr()) }.unwrap();
     let mut rng = XorShiftRng::seed_from_u64(SEED);
+    let mut free_memory = 0;
     let mut total_memory = 0;
-    unsafe { cuda.cuMemGetInfo_v2(&mut 0, &mut total_memory) }.unwrap();
+    unsafe { cuda.cuMemGetInfo_v2(&mut free_memory, &mut total_memory) }.unwrap();
     let max_memory = total_memory / 2;
-    let total_elements = u32::MAX as usize + 1;
+    let total_elements = u16::MAX as usize + 1;
     assert!(total_elements % GROUP_SIZE == 0);
     let element_size = T::Input::size_of() + T::Output::size_of();
     let required_memory = total_elements * element_size;
     let iterations = (required_memory / max_memory).max(1);
-    let memory_batch_size =
+    let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
     let mut result = vec![T::Output::zero(); memory_batch_size / element_size];
@@ -297,10 +298,11 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
         for (i, result) in result.iter().copied().enumerate() {
             let value = T::Input::read(&inputs, i);
             let result = result;
-            if !T::host_verify(value, result) {
+            if let Err(expected) = T::host_verify(value, result) {
                 return Err(TestError {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
+                    expected: format!("{:?}", expected),
                 });
             }
         }
@@ -325,4 +327,5 @@ pub struct TestCase {
 pub struct TestError {
     pub input: String,
     pub output: String,
+    pub expected: String,
 }
