@@ -6,6 +6,7 @@ use test::TestCase;
 
 mod bfe;
 mod bfi;
+mod brev;
 mod cuda;
 mod test;
 
@@ -41,6 +42,7 @@ fn tests() -> Vec<TestCase> {
         bfe::rng_s64(),
         bfi::rng_b32(),
         bfi::rng_b64(),
+        brev::b32(),
     ]
 }
 
