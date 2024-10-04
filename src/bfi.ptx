@@ -3,17 +3,20 @@
 .address_size 64
 
 .entry run(
-	.param .u64 values,
+	.param .u64 a_values,
+    .param .u64 b_values,
 	.param .u64 positions,
     .param .u64 lengths,
     .param .u64 output
 )
 {
-	.reg .u64 	    values_addr;
+	.reg .u64 	    a_values_addr;
+	.reg .u64 	    b_values_addr;
     .reg .u64 	    positions_addr;
 	.reg .u64 	    lengths_addr;
     .reg .u64 	    output_addr;
-	ld.param.u64 	values_addr, [values];
+	ld.param.u64 	a_values_addr, [a_values];
+	ld.param.u64 	b_values_addr, [b_values];
     ld.param.u64 	positions_addr, [positions];
 	ld.param.u64 	lengths_addr, [lengths];
     ld.param.u64 	output_addr, [output];
@@ -29,20 +32,23 @@
     mov.u32         ntid_x, %ntid.x;
     mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
     
-    mad.lo.u64      values_addr, global_id_64, <TYPE_SIZE>, values_addr;
+    mad.lo.u64      a_values_addr, global_id_64, <TYPE_SIZE>, a_values_addr;
+    mad.lo.u64      b_values_addr, global_id_64, <TYPE_SIZE>, b_values_addr;
     mad.lo.u64      lengths_addr, global_id_64, 4, lengths_addr;
     mad.lo.u64      positions_addr, global_id_64, 4, positions_addr;
     mad.lo.u64      output_addr, global_id_64, <TYPE_SIZE>, output_addr;
 
-    .reg .<TYPE>    value;
+    .reg .<TYPE>    a_value;
+    .reg .<TYPE>    b_value;
     .reg .u32       len;
     .reg .u32       pos;
 
-    ld.<TYPE>       value, [values_addr];
+    ld.<TYPE>       a_value, [a_values_addr];
+    ld.<TYPE>       b_value, [b_values_addr];
     ld.u32          len, [lengths_addr];
     ld.u32          pos, [positions_addr];
-    bfe.<TYPE>      value, value, pos, len;
-    st.<TYPE>       [output_addr], value;
+    bfi.<TYPE>      a_value, a_value, b_value, pos, len;
+    st.<TYPE>       [output_addr], a_value;
 
 	ret;
 }

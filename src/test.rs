@@ -155,6 +155,7 @@ impl<X: OnDevice, Y: OnDevice> OnDevice for (X, Y) {
         (X::zero(), Y::zero())
     }
 }
+
 impl<X: OnDevice, Y: OnDevice, Z: OnDevice> OnDevice for (X, Y, Z) {
     const COMPONENTS: usize = 3;
 
@@ -178,6 +179,34 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice> OnDevice for (X, Y, Z) {
 
     fn zero() -> Self {
         (X::zero(), Y::zero(), Z::zero())
+    }
+}
+
+impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, W) {
+    const COMPONENTS: usize = 4;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        self.0.write(&mut buffers[0..]);
+        self.1.write(&mut buffers[1..]);
+        self.2.write(&mut buffers[2..]);
+        self.3.write(&mut buffers[3..]);
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        (
+            X::read(&buffers[0..], index),
+            Y::read(&buffers[1..], index),
+            Z::read(&buffers[2..], index),
+            W::read(&buffers[3..], index),
+        )
+    }
+
+    fn size_of() -> usize {
+        X::size_of() + Y::size_of() + Z::size_of() + W::size_of()
+    }
+
+    fn zero() -> Self {
+        (X::zero(), Y::zero(), Z::zero(), W::zero())
     }
 }
 
@@ -222,13 +251,14 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
     let mut module = ptr::null_mut();
     unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
     let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"bfe".as_ptr()) }.unwrap();
+    unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
     let mut rng = XorShiftRng::seed_from_u64(SEED);
     let mut free_memory = 0;
     let mut total_memory = 0;
     unsafe { cuda.cuMemGetInfo_v2(&mut free_memory, &mut total_memory) }.unwrap();
     let max_memory = total_memory / 2;
-    let total_elements = u16::MAX as usize + 1;
+    // Totally arbitrary number, any larger crashes on my home machine
+    let total_elements = 2.pow(26);
     assert!(total_elements % GROUP_SIZE == 0);
     let element_size = T::Input::size_of() + T::Output::size_of();
     let required_memory = total_elements * element_size;

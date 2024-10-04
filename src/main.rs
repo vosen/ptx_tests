@@ -5,6 +5,7 @@ use std::ptr;
 use test::TestCase;
 
 mod bfe;
+mod bfi;
 mod cuda;
 mod test;
 
@@ -38,6 +39,8 @@ fn tests() -> Vec<TestCase> {
         bfe::rng_s32(),
         bfe::rng_u64(),
         bfe::rng_s64(),
+        bfi::rng_b32(),
+        bfi::rng_b64(),
     ]
 }
 
