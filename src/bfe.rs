@@ -1,4 +1,6 @@
 use crate::test::{self, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
+use num::cast::AsPrimitive;
+use num::PrimInt;
 use num::{traits::FromBytes, Zero};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 use std::fmt::Debug;
@@ -19,7 +21,7 @@ pub(super) fn rng_s64() -> TestCase {
     bfe_rng::<i64>()
 }
 
-fn bfe_rng<T: PtxScalar>() -> TestCase
+fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt>() -> TestCase
 where
     Standard: Distribution<T>,
 {
@@ -33,7 +35,7 @@ pub struct Bfe<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PtxScalar> TestCommon for Bfe<T> {
+impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
     type Input = (T, u32, u32);
 
     type Output = T;
@@ -47,7 +49,11 @@ impl<T: PtxScalar> TestCommon for Bfe<T> {
     }
 
     fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
-        fn bfe_host<T: PtxScalar>(value: T, pos: u32, len: u32) -> T {
+        fn bfe_host<T: PtxScalar + AsPrimitive<usize> + PrimInt>(
+            value: T,
+            pos: u32,
+            len: u32,
+        ) -> T {
             let pos = if mem::size_of::<T>() == 4 {
                 pos.to_le_bytes()[0] as usize
             } else {
@@ -85,7 +91,7 @@ impl<T: PtxScalar> TestCommon for Bfe<T> {
     }
 }
 
-impl<T: PtxScalar + FromBytes> RangeTest for Bfe<T>
+impl<T: PtxScalar + AsPrimitive<usize> + PrimInt + FromBytes> RangeTest for Bfe<T>
 where
     for<'a> T::Bytes: TryFrom<&'a [u8]>,
     for<'a> <<T as FromBytes>::Bytes as TryFrom<&'a [u8]>>::Error: Debug,
@@ -108,7 +114,7 @@ where
     }
 }
 
-impl<T: PtxScalar> RandomTest for Bfe<T>
+impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> RandomTest for Bfe<T>
 where
     Standard: Distribution<T>,
 {
@@ -120,13 +126,13 @@ where
     }
 }
 
-fn get_bit<T: PtxScalar>(value: T, n: usize) -> bool {
+fn get_bit<T: PtxScalar + AsPrimitive<usize>>(value: T, n: usize) -> bool {
     assert!(n < mem::size_of::<T>() * 8);
     let value: usize = value.as_();
     value & (1 << n) != 0
 }
 
-fn set_bit<T: PtxScalar>(value: &mut T, n: usize, bit: bool) {
+fn set_bit<T: PtxScalar + PrimInt>(value: &mut T, n: usize, bit: bool) {
     assert!(n < mem::size_of::<T>() * 8);
     let mask = T::one().unsigned_shl(n as u32);
     if bit {

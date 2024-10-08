@@ -1,4 +1,5 @@
 use crate::test::{self, PtxScalar, TestCase, TestCommon};
+use num::PrimInt;
 use rand::{distributions::Standard, prelude::Distribution};
 use std::mem;
 
@@ -23,7 +24,7 @@ pub struct Brev<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PtxScalar> TestCommon for Brev<T> {
+impl<T: PtxScalar + PrimInt> TestCommon for Brev<T> {
     type Input = T;
 
     type Output = T;

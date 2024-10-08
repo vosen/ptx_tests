@@ -1,4 +1,5 @@
 use crate::test::{self, PtxScalar, RandomTest, TestCase, TestCommon};
+use num::{cast::AsPrimitive, PrimInt};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 use std::mem;
 
@@ -11,7 +12,7 @@ pub(super) fn rng_b64() -> TestCase {
     bfi_rng::<u64>()
 }
 
-fn bfi_rng<T: PtxScalar>() -> TestCase
+fn bfi_rng<T: PtxScalar + PrimInt + AsPrimitive<usize>>() -> TestCase
 where
     Standard: Distribution<T>,
 {
@@ -26,7 +27,7 @@ pub struct Bfi<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PtxScalar> TestCommon for Bfi<T> {
+impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> TestCommon for Bfi<T> {
     type Input = (T, T, u32, u32);
 
     type Output = T;
@@ -41,7 +42,12 @@ impl<T: PtxScalar> TestCommon for Bfi<T> {
     }
 
     fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
-        fn bfi_host<T: PtxScalar>(a: T, b: T, pos: u32, len: u32) -> T {
+        fn bfi_host<T: PtxScalar + PrimInt + AsPrimitive<usize>>(
+            a: T,
+            b: T,
+            pos: u32,
+            len: u32,
+        ) -> T {
             let msb = mem::size_of::<T>() * 8 - 1;
             let pos = if mem::size_of::<T>() == 4 {
                 pos.to_le_bytes()[0] as usize
@@ -73,7 +79,7 @@ impl<T: PtxScalar> TestCommon for Bfi<T> {
     }
 }
 
-impl<T: PtxScalar> RandomTest for Bfi<T>
+impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> RandomTest for Bfi<T>
 where
     Standard: Distribution<T>,
 {
@@ -86,13 +92,13 @@ where
     }
 }
 
-fn get_bit<T: PtxScalar>(value: T, n: usize) -> bool {
+fn get_bit<T: PtxScalar + AsPrimitive<usize>>(value: T, n: usize) -> bool {
     assert!(n < mem::size_of::<T>() * 8);
     let value: usize = value.as_();
     value & (1 << n) != 0
 }
 
-fn set_bit<T: PtxScalar>(value: &mut T, n: usize, bit: bool) {
+fn set_bit<T: PtxScalar + PrimInt>(value: &mut T, n: usize, bit: bool) {
     assert!(n < mem::size_of::<T>() * 8);
     let mask = T::one().unsigned_shl(n as u32);
     if bit {

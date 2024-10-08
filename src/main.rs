@@ -8,6 +8,7 @@ mod bfe;
 mod bfi;
 mod brev;
 mod cuda;
+mod cvt;
 mod test;
 
 #[derive(Debug, Clone, Bpaf)]
@@ -61,6 +62,15 @@ fn run(args: Arguments) -> i32 {
                 let re = Regex::new(&filter).unwrap();
                 tests = tests.into_iter().filter(|t| re.is_match(&t.name)).collect();
             }
+            {
+                let cuda = Cuda::new(cuda);
+                unsafe { cuda.cuInit(0) }.unwrap();
+                let mut ctx = ptr::null_mut();
+                unsafe { cuda.cuCtxCreate_v2(&mut ctx, 0, 0) }.unwrap();
+                cvt::run(&cuda);
+            }
+            panic!("");
+
             let cuda = Cuda::new(cuda);
             unsafe { cuda.cuInit(0) }.unwrap();
             let mut ctx = ptr::null_mut();

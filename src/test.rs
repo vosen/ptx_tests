@@ -1,9 +1,9 @@
+use crate::cuda::Cuda;
+use half::f16;
 use num::{cast::AsPrimitive, Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{fmt::Debug, mem, ptr, u32};
-
-use crate::cuda::Cuda;
 
 pub trait TestCommon {
     type Input: OnDevice;
@@ -67,6 +67,24 @@ impl OnDevice for u16 {
         }
     }
 }
+impl OnDevice for i16 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+
 impl OnDevice for u32 {
     const COMPONENTS: usize = 1;
 
@@ -119,6 +137,57 @@ impl OnDevice for u64 {
     }
 }
 impl OnDevice for i64 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for f16 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for f32 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for f64 {
     const COMPONENTS: usize = 1;
 
     fn write(self, buffers: &mut [Vec<u8>]) {
@@ -210,12 +279,31 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, 
     }
 }
 
-pub trait PtxScalar:
-    Copy + Num + Bounded + PrimInt + AsPrimitive<usize> + Debug + OnDevice
-{
+pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice {
     fn name() -> &'static str;
     fn unsigned() -> bool {
         Self::min_value() == <Self as Zero>::zero()
+    }
+    fn float() -> bool {
+        false
+    }
+    fn signed() -> bool {
+        !Self::float() && !Self::unsigned()
+    }
+    fn is_f32() -> bool {
+        Self::float() && Self::size_of() == 4
+    }
+}
+
+impl PtxScalar for u16 {
+    fn name() -> &'static str {
+        "u16"
+    }
+}
+
+impl PtxScalar for i16 {
+    fn name() -> &'static str {
+        "s16"
     }
 }
 
@@ -240,6 +328,33 @@ impl PtxScalar for u64 {
 impl PtxScalar for i64 {
     fn name() -> &'static str {
         "s64"
+    }
+}
+
+impl PtxScalar for f16 {
+    fn name() -> &'static str {
+        "f16"
+    }
+    fn float() -> bool {
+        true
+    }
+}
+
+impl PtxScalar for f32 {
+    fn name() -> &'static str {
+        "f32"
+    }
+    fn float() -> bool {
+        true
+    }
+}
+
+impl PtxScalar for f64 {
+    fn name() -> &'static str {
+        "f64"
+    }
+    fn float() -> bool {
+        true
     }
 }
 

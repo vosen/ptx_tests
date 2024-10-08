@@ -12,6 +12,7 @@ rand_xorshift = "0.3.0"
 argh = "0.1.12"
 bpaf = { version = "0.9.14", features = ["derive"] }
 regex = "1.11.0"
+half = { version = "2.4.1", features = ["num-traits"] } 
 
 [profile.release]
 codegen-units = 1
