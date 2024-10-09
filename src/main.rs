@@ -1,3 +1,6 @@
+#![feature(link_llvm_intrinsics)]
+#![feature(f16)]
+
 use bpaf::Bpaf;
 use cuda::Cuda;
 use regex::{self, Regex};
@@ -36,7 +39,7 @@ fn main() {
 }
 
 fn tests() -> Vec<TestCase> {
-    vec![
+    let mut tests = vec![
         bfe::rng_u32(),
         bfe::rng_s32(),
         bfe::rng_u64(),
@@ -44,7 +47,9 @@ fn tests() -> Vec<TestCase> {
         bfi::rng_b32(),
         bfi::rng_b64(),
         brev::b32(),
-    ]
+    ];
+    tests.extend(cvt::all_tests());
+    tests
 }
 
 fn run(args: Arguments) -> i32 {
@@ -62,15 +67,6 @@ fn run(args: Arguments) -> i32 {
                 let re = Regex::new(&filter).unwrap();
                 tests = tests.into_iter().filter(|t| re.is_match(&t.name)).collect();
             }
-            {
-                let cuda = Cuda::new(cuda);
-                unsafe { cuda.cuInit(0) }.unwrap();
-                let mut ctx = ptr::null_mut();
-                unsafe { cuda.cuCtxCreate_v2(&mut ctx, 0, 0) }.unwrap();
-                cvt::run(&cuda);
-            }
-            panic!("");
-
             let cuda = Cuda::new(cuda);
             unsafe { cuda.cuInit(0) }.unwrap();
             let mut ctx = ptr::null_mut();

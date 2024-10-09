@@ -1,3 +1,4 @@
+use crate::cuda::Cuda;
 use crate::test::{self, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
 use num::cast::AsPrimitive;
 use num::PrimInt;
@@ -25,8 +26,9 @@ fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt>() -> TestCase
 where
     Standard: Distribution<T>,
 {
+    let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfe<T>>(cuda));
     TestCase {
-        test: test::run_random::<Bfe<T>>,
+        test,
         name: format!("bfe_rng_{}", T::name()),
     }
 }
@@ -40,7 +42,7 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
 
     type Output = T;
 
-    fn ptx() -> String {
+    fn ptx(&self) -> String {
         let mut src = PTX
             .replace("<TYPE>", T::name())
             .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
@@ -48,7 +50,7 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
         src
     }
 
-    fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
+    fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         fn bfe_host<T: PtxScalar + AsPrimitive<usize> + PrimInt>(
             value: T,
             pos: u32,
@@ -96,7 +98,7 @@ where
     for<'a> T::Bytes: TryFrom<&'a [u8]>,
     for<'a> <<T as FromBytes>::Bytes as TryFrom<&'a [u8]>>::Error: Debug,
 {
-    fn generate(input: u32) -> Self::Input {
+    fn generate(&self, input: u32) -> Self::Input {
         let len = input.to_le_bytes()[0] as u32;
         let pos = input.to_le_bytes()[1] as u32;
         let value = [

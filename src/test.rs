@@ -3,18 +3,21 @@ use half::f16;
 use num::{cast::AsPrimitive, Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
-use std::{fmt::Debug, mem, ptr, u32};
+use std::{any::Any, fmt::Debug, mem, ptr, u32};
 
 pub trait TestCommon {
     type Input: OnDevice;
     type Output: OnDevice;
-    fn host_verify(input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
-    fn ptx() -> String;
+    fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
+    fn ptx(&self) -> String;
 }
 
 pub trait RangeTest: TestCommon {
     const MAX_VALUE: u32 = u32::MAX;
-    fn generate(input: u32) -> Self::Input;
+    fn generate(&self, input: u32) -> Self::Input;
+    fn is_valid(&self) -> bool {
+        true
+    }
 }
 
 pub trait RandomTest: TestCommon {
@@ -279,7 +282,7 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, 
     }
 }
 
-pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice {
+pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice + Any {
     fn name() -> &'static str;
     fn unsigned() -> bool {
         Self::min_value() == <Self as Zero>::zero()
@@ -364,7 +367,8 @@ const GROUP_SIZE: usize = 128;
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
 pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
-    let src = T::ptx();
+    // TOOD: fix
+    let src = T::ptx(&unsafe { mem::zeroed::<T>() });
     let mut module = ptr::null_mut();
     unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
     let mut kernel = ptr::null_mut();
@@ -444,7 +448,8 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
         for (i, result) in result.iter().copied().enumerate() {
             let value = T::Input::read(&inputs, i);
             let result = result;
-            if let Err(expected) = T::host_verify(value, result) {
+            // TODO: fix
+            if let Err(expected) = T::host_verify(&unsafe { mem::zeroed() }, value, result) {
                 return Err(TestError {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
@@ -465,27 +470,33 @@ fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
 }
 
-pub fn run_range<T: RangeTest>(cuda: &Cuda) -> Result<(), TestError> {
-    let src = T::ptx();
+pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<(), TestError> {
+    let src = Test::ptx(&t);
     let mut module = ptr::null_mut();
-    unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
+    let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
+    if t.is_valid() {
+        load_result.unwrap();
+    } else {
+        load_result.unwrap_err();
+        return Ok(());
+    }
     let mut kernel = ptr::null_mut();
     unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
     let mut free_memory = 0;
     let mut total_memory = 0;
     unsafe { cuda.cuMemGetInfo_v2(&mut free_memory, &mut total_memory) }.unwrap();
     let max_memory = (total_memory / 2).min(SAFE_MEMORY_LIMIT);
-    let total_elements = T::MAX_VALUE as usize + 1;
+    let total_elements = Test::MAX_VALUE as usize + 1;
     assert!(total_elements % GROUP_SIZE == 0);
-    let element_size = T::Input::size_of() + T::Output::size_of();
+    let element_size = Test::Input::size_of() + Test::Output::size_of();
     let required_memory = total_elements * element_size;
     let iterations = (required_memory / max_memory).max(1);
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
-    let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
-    let mut result = vec![T::Output::zero(); memory_batch_size / element_size];
+    let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
+    let mut result = vec![Test::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
-        assert_eq!(T::Output::COMPONENTS, 1);
+        assert_eq!(Test::Output::COMPONENTS, 1);
         let elment_start = iteration * memory_batch_size / element_size;
         let memory_batch_size = if iteration == iterations - 1 {
             required_memory - (memory_batch_size * (iterations - 1))
@@ -497,10 +508,10 @@ pub fn run_range<T: RangeTest>(cuda: &Cuda) -> Result<(), TestError> {
             vec.clear();
         }
         for i in 0..element_batch_size {
-            let input = T::generate((elment_start + i) as u32);
+            let input = t.generate((elment_start + i) as u32);
             input.write(&mut inputs);
         }
-        result.resize(element_batch_size, T::Output::zero());
+        result.resize(element_batch_size, Test::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -512,8 +523,13 @@ pub fn run_range<T: RangeTest>(cuda: &Cuda) -> Result<(), TestError> {
             })
             .collect();
         let mut dev_output = 0;
-        unsafe { cuda.cuMemAlloc_v2(&mut dev_output, element_batch_size * T::Output::size_of()) }
-            .unwrap();
+        unsafe {
+            cuda.cuMemAlloc_v2(
+                &mut dev_output,
+                element_batch_size * Test::Output::size_of(),
+            )
+        }
+        .unwrap();
         let mut args = dev_inputs
             .iter()
             .map(|ptr| ptr as *const u64)
@@ -540,14 +556,14 @@ pub fn run_range<T: RangeTest>(cuda: &Cuda) -> Result<(), TestError> {
             cuda.cuMemcpyDtoH_v2(
                 result.as_mut_ptr() as _,
                 dev_output,
-                result.len() * T::Output::size_of(),
+                result.len() * Test::Output::size_of(),
             )
         }
         .unwrap();
         for (i, result) in result.iter().copied().enumerate() {
-            let value = T::Input::read(&inputs, i);
+            let value = Test::Input::read(&inputs, i);
             let result = result;
-            if let Err(expected) = T::host_verify(value, result) {
+            if let Err(expected) = t.host_verify(value, result) {
                 return Err(TestError {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
@@ -565,7 +581,7 @@ pub fn run_range<T: RangeTest>(cuda: &Cuda) -> Result<(), TestError> {
 }
 
 pub struct TestCase {
-    pub test: fn(cuda: &Cuda) -> Result<(), TestError>,
+    pub test: Box<dyn FnOnce(&Cuda) -> Result<(), TestError>>,
     pub name: String,
 }
 
