@@ -2,42 +2,13 @@ use crate::{
     cuda::{CUresult, Cuda},
     test::{self, PtxScalar, TestCase, TestCommon},
 };
+use num::traits::AsPrimitive;
 use num::{traits::ToBytes, Float, Integer};
 use std::{
     any::{self, Any, TypeId},
     cmp::Ordering,
     mem, ptr,
 };
-
-pub fn run_many(
-    cuda: &Cuda,
-    modifiers: &[&str],
-    input: &str,
-    input_size: &str,
-    output: &str,
-    output_size: &str,
-) -> CUresult {
-    let src = include_str!("cvt.ptx");
-    let modifiers = modifiers.join("");
-    let input_bits = input_size.parse::<u32>().unwrap() * 8;
-    let output_bits = output_size.parse::<u32>().unwrap() * 8;
-    let mut src = src
-        .replace("<INPUT>", input)
-        // PTX disallows ld.f16, but allows ld.b16 and implictly converts to f16
-        .replace("<INPUT_LD>", &format!("b{input_bits}"))
-        .replace("<INPUT_SIZE>", input_size)
-        .replace("<OUTPUT>", output)
-        .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
-        .replace("<OUTPUT_SIZE>", output_size)
-        .replace("<MODIFIERS>", &modifiers);
-    src.push('\0');
-    let mut module = ptr::null_mut();
-    let result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
-    if result.is_ok() {
-        unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    }
-    result
-}
 
 fn is_invalid_cvt<Output: PtxScalar, Input: PtxScalar>(
     rounding: &str,
@@ -151,16 +122,6 @@ impl<To: PtxScalar, From: PtxScalar> Cvt<To, From> {
     }
 }
 
-fn f32_sat(mut x: f32) -> f32 {
-    if x <= 0.0 {
-        x = 0.0;
-    }
-    if x > 1.0 {
-        x = 1.0;
-    }
-    x
-}
-
 impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, From> {
     type Input = From;
 
@@ -169,34 +130,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         let rnd = unsafe { mem::transmute::<_, Rounding>(self.rnd) };
         <Self::Input as HostConvert<Self::Output>>::convert(input, rnd, self.ftz, self.sat, output)
-        /*
-        let input_type_id = input.type_id();
-        if input_type_id == TypeId::of::<half::f16>() {
-            let input: half::f16 = unsafe { mem::transmute_copy(&input) };
-            if TypeId::of::<Self::Output>() == TypeId::of::<f32>() {
-                let mut result: f32 = input.to_f32();
-                if self.sat {
-                    if result.is_nan() {
-                        result = 0.0;
-                    }
-                    result = f32_sat(result);
-                }
-                if self.ftz {
-                    // Do nothing, the smallest half::f16 subnormal is bigger than the largest f32 subnormal
-                }
-                let computed: f32 = unsafe { mem::transmute_copy(&output) };
-                if !pseudo_equal(result, computed) {
-                    Err(unsafe { mem::transmute_copy(&result) })
-                } else {
-                    Ok(())
-                }
-            } else {
-                unimplemented!()
-            }
-        } else {
-            unimplemented!()
-        }
-         */
     }
 
     fn ptx(&self) -> String {
@@ -222,13 +155,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
     }
 }
 
-fn pseudo_equal<T: Float + ToBytes>(x: T, y: T) -> bool {
-    if x.is_nan() && y.is_nan() {
-        return true;
-    }
-    x.to_ne_bytes() == y.to_ne_bytes()
-}
-
 impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<To, From> {
     const MAX_VALUE: u32 = (2usize.pow((mem::size_of::<From>() * 8) as u32) - 1) as u32;
 
@@ -248,7 +174,7 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<T
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum Rounding {
     Default = 0,
     Rni,
@@ -282,6 +208,13 @@ impl Rounding {
             Rounding::Rz => ".rz",
             Rounding::Rm => ".rm",
             Rounding::Rp => ".rp",
+        }
+    }
+
+    fn is_integer(self) -> bool {
+        match self {
+            Rounding::Rzi | Rounding::Rni | Rounding::Rmi | Rounding::Rpi => true,
+            Rounding::Default | Rounding::Rz | Rounding::Rn | Rounding::Rm | Rounding::Rp => false,
         }
     }
 }
@@ -328,7 +261,7 @@ trait HostConvert<To: PtxScalar>: Copy {
 
 macro_rules! unimplemented_convert {
     () => {
-        unimplemented_convert!{ [i16, u16, i32, u32, half::f16/*,  f32 */] }
+        unimplemented_convert!{ [i16, u16, i32, u32/*, half::f16,  f32 */] }
     };
     ([$($input:ty),*]) => {
         $(
@@ -345,6 +278,8 @@ macro_rules! unimplemented_convert {
         )*
     };
 }
+
+unimplemented_convert!();
 
 // That's the easiest and most consistent way to set rounding mode in Rust, sorry
 extern "C" {
@@ -386,29 +321,66 @@ impl FloatToFloat<half::f16> for half::f16 {
     }
 }
 
+impl FloatToFloat<f32> for half::f16 {
+    fn float_to_float(self) -> f32 {
+        self.as_()
+    }
+}
+
+impl FloatToFloat<f64> for half::f16 {
+    fn float_to_float(self) -> f64 {
+        self.as_()
+    }
+}
+
 macro_rules! float_to_float {
+    ([$($input:ty),*]) => {
+        $(
+            float_to_float! { $input, [half::f16, f32, f64] }
+        )*
+    };
     ($input:ty, [$($output:ty),*]) => {
         $(
             impl HostConvert<$output> for $input {
-                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                fn convert(mut self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
                     use num::traits::AsPrimitive;
                     use num::traits::ConstZero;
                     use num::traits::ConstOne;
-                    let env_rnd = unsafe { llvm_get_rounding() };
-                    unsafe {llvm_set_rounding(rnd.as_llvm()) };
-                    let mut host_result: $output = self.float_to_float();
-                    unsafe {llvm_set_rounding(env_rnd) };
+                    let mut host_result = if rnd.is_integer() && mem::size_of::<$input>() == mem::size_of::<$output>() {
+                        FloatAsInteger::round(self, rnd).as_()
+                    } else {
+                        // ERRATA: .ftz with explicit rounding mode does _not_ flush input zeros
+                        if ftz && (mem::size_of::<$input>() == 4 && rnd == Rounding::Default) {
+                            if self.is_subnormal() {
+                                if self < <$input>::ZERO {
+                                    self = <$input>::neg_zero();
+                                } else if self > <$input>::ZERO {
+                                    self = <$input>::ZERO;
+                                }
+                            }
+                        }
+                        let env_rnd = unsafe { llvm_get_rounding() };
+                        unsafe {llvm_set_rounding(rnd.as_llvm()) };
+                        let mut host_result: $output = self.float_to_float();
+                        unsafe {llvm_set_rounding(env_rnd) };
+                        if ftz && (mem::size_of::<$output>() == 4) {
+                            if host_result.is_subnormal() {
+                                if host_result < <$output>::ZERO {
+                                    host_result = <$output>::neg_zero();
+                                } else if host_result > <$output>::ZERO {
+                                    host_result = <$output>::ZERO;
+                                }
+                            }
+                        }
+                        host_result
+                    };
                     if sat {
-                        if host_result <= <$output>::ZERO {
+                        if host_result.is_nan() {
+                            host_result = <$output>::ZERO
+                        } else if host_result <= <$output>::ZERO {
                             host_result = <$output>::ZERO;
-                        }
-                        if host_result > <$output>::ONE {
+                        } else if host_result > <$output>::ONE {
                             host_result = <$output>::ONE;
-                        }
-                    }
-                    if ftz {
-                        if !host_result.is_normal() {
-                            host_result = <$output>::ZERO;
                         }
                     }
                     if host_result.is_nan() && expected.is_nan() {
@@ -425,18 +397,80 @@ macro_rules! float_to_float {
     }
 }
 
-float_to_float!(f32, [half::f16, f32, f64]);
+float_to_float!([half::f16, f32]);
 
 macro_rules! float_to_int {
+    ([$($input:ty),*]) => {
+        $(
+            float_to_int! { $input, [i16, u16, i32, u32, i64, u64] }
+        )*
+    };
     ($input:ty, [$($output:ty),*]) => {
         $(
             impl HostConvert<$output> for $input {
-                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
-                    unimplemented!()
+                fn convert(mut self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                    use num::traits::AsPrimitive;
+                    use num::traits::ConstZero;
+                    if ftz {
+                        if self.is_subnormal() {
+                            self = <$input>::ZERO;
+                        }
+                    }
+                    let host_result: $output = if self.is_nan() {
+                        // We don't check NaN conversion, even on NV GPUs it is
+                        // not consistent
+                        return Ok(())
+                    }  else {
+                        FloatAsInteger::round(self, rnd).as_()
+                    };
+                    //let rounded = FloatAsInteger::round(self, rnd);
+                    //let host_result: $output = unsafe { mem::transmute::<_, <$input as Underlying>::Target>(rounded) as $output };
+                    if host_result.to_ne_bytes() != expected.to_ne_bytes() {
+                        Err(host_result)
+                    } else {
+                        Ok(())
+                    }
                 }
             }
         )*
+    };
+}
+
+float_to_int!([half::f16, f32]);
+
+trait FloatAsInteger {
+    fn round(self, mode: Rounding) -> Self;
+}
+
+impl FloatAsInteger for f32 {
+    fn round(self, mode: Rounding) -> Self {
+        let rnd_fn = match mode {
+            Rounding::Default | Rounding::Rni => f32::round_ties_even,
+            Rounding::Rzi => f32::trunc,
+            Rounding::Rmi => f32::floor,
+            Rounding::Rpi => f32::ceil,
+            Rounding::Rn => f32::round_ties_even,
+            Rounding::Rz => f32::trunc,
+            Rounding::Rm => f32::floor,
+            Rounding::Rp => f32::ceil,
+        };
+        rnd_fn(self)
     }
 }
 
-float_to_int!(f32, [i16, u16, i32, u32, i64, u64]);
+impl FloatAsInteger for half::f16 {
+    fn round(self, mode: Rounding) -> Self {
+        let this = unsafe { mem::transmute::<_, f16>(self) };
+        let rnd_fn = match mode {
+            Rounding::Default | Rounding::Rni => f16::round_ties_even,
+            Rounding::Rzi => f16::trunc,
+            Rounding::Rmi => f16::floor,
+            Rounding::Rpi => f16::ceil,
+            Rounding::Rn => f16::round_ties_even,
+            Rounding::Rz => f16::trunc,
+            Rounding::Rm => f16::floor,
+            Rounding::Rp => f16::ceil,
+        };
+        unsafe { mem::transmute::<_, half::f16>(rnd_fn(this)) }
+    }
+}

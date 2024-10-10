@@ -56,6 +56,7 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
             pos: u32,
             len: u32,
         ) -> T {
+            // ERRATA: len and pos parameters in 64 bit variant use whole 32 bits, not just bottom 8
             let pos = if mem::size_of::<T>() == 4 {
                 pos.to_le_bytes()[0] as usize
             } else {

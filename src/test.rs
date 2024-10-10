@@ -366,7 +366,7 @@ const GROUP_SIZE: usize = 128;
 // Totally unscientific number that works on my machine
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
-pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
+pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, TestError> {
     // TOOD: fix
     let src = T::ptx(&unsafe { mem::zeroed::<T>() });
     let mut module = ptr::null_mut();
@@ -463,14 +463,14 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<(), TestError> {
         unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
     unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    Ok(())
+    Ok(true)
 }
 
 fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
 }
 
-pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<(), TestError> {
+pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, TestError> {
     let src = Test::ptx(&t);
     let mut module = ptr::null_mut();
     let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
@@ -478,7 +478,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<(), TestError>
         load_result.unwrap();
     } else {
         load_result.unwrap_err();
-        return Ok(());
+        return Ok(false);
     }
     let mut kernel = ptr::null_mut();
     unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
@@ -577,11 +577,11 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<(), TestError>
         unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
     unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    Ok(())
+    Ok(true)
 }
 
 pub struct TestCase {
-    pub test: Box<dyn FnOnce(&Cuda) -> Result<(), TestError>>,
+    pub test: Box<dyn FnOnce(&Cuda) -> Result<bool, TestError>>,
     pub name: String,
 }
 
