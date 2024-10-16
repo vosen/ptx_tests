@@ -346,34 +346,31 @@ macro_rules! float_to_float {
                     use num::traits::AsPrimitive;
                     use num::traits::ConstZero;
                     use num::traits::ConstOne;
+                    if float_to_float_input_ftz::<$output, $input>(ftz, rnd) && self.is_subnormal() {
+                        if self < <$input>::ZERO {
+                            self = <$input>::neg_zero();
+                        } else if self > <$input>::ZERO {
+                            self = <$input>::ZERO;
+                        }
+                    }
                     let mut host_result = if rnd.is_integer() && mem::size_of::<$input>() == mem::size_of::<$output>() {
                         FloatAsInteger::round(self, rnd).as_()
                     } else {
-                        // ERRATA: .ftz with explicit rounding mode does _not_ flush input zeros
-                        if ftz && (mem::size_of::<$input>() == 4 && rnd == Rounding::Default) {
-                            if self.is_subnormal() {
-                                if self < <$input>::ZERO {
-                                    self = <$input>::neg_zero();
-                                } else if self > <$input>::ZERO {
-                                    self = <$input>::ZERO;
-                                }
-                            }
-                        }
                         let env_rnd = unsafe { llvm_get_rounding() };
-                        unsafe {llvm_set_rounding(rnd.as_llvm()) };
-                        let mut host_result: $output = self.float_to_float();
-                        unsafe {llvm_set_rounding(env_rnd) };
-                        if ftz && (mem::size_of::<$output>() == 4) {
-                            if host_result.is_subnormal() {
-                                if host_result < <$output>::ZERO {
-                                    host_result = <$output>::neg_zero();
-                                } else if host_result > <$output>::ZERO {
-                                    host_result = <$output>::ZERO;
-                                }
-                            }
-                        }
+                        unsafe { llvm_set_rounding(rnd.as_llvm()) };
+                        let host_result: $output = self.float_to_float();
+                        unsafe { llvm_set_rounding(env_rnd) };
                         host_result
                     };
+                    if ftz && mem::size_of::<$output>() == 4 {
+                        if host_result.is_subnormal() {
+                            if host_result < <$output>::ZERO {
+                                host_result = <$output>::neg_zero();
+                            } else if host_result > <$output>::ZERO {
+                                host_result = <$output>::ZERO;
+                            }
+                        }
+                    }
                     if sat {
                         if host_result.is_nan() {
                             host_result = <$output>::ZERO
@@ -394,6 +391,19 @@ macro_rules! float_to_float {
                 }
             }
         )*
+    }
+}
+
+fn float_to_float_input_ftz<To, From>(ftz: bool, rnd: Rounding) -> bool {
+    if ftz && mem::size_of::<From>() == 4 {
+        if mem::size_of::<To>() == 2 {
+            // ERRATA: <rnd>.ftz{.sat}.f16.f32 flushes subnormals only if <rnd> is explicit integer rounding
+            rnd.is_integer()
+        } else {
+            true
+        }
+    } else {
+        false
     }
 }
 
