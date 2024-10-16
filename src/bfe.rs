@@ -27,10 +27,7 @@ where
     Standard: Distribution<T>,
 {
     let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfe<T>>(cuda));
-    TestCase {
-        test,
-        name: format!("bfe_rng_{}", T::name()),
-    }
+    TestCase::new(format!("bfe_rng_{}", T::name()), test)
 }
 
 pub struct Bfe<T: PtxScalar> {

@@ -366,7 +366,7 @@ const GROUP_SIZE: usize = 128;
 // Totally unscientific number that works on my machine
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
-pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, TestError> {
+pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
     // TOOD: fix
     let src = T::ptx(&unsafe { mem::zeroed::<T>() });
     let mut module = ptr::null_mut();
@@ -450,7 +450,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, TestError> {
             let result = result;
             // TODO: fix
             if let Err(expected) = T::host_verify(&unsafe { mem::zeroed() }, value, result) {
-                return Err(TestError {
+                return Err(ResultMismatch {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
                     expected: format!("{:?}", expected),
@@ -470,7 +470,7 @@ fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
 }
 
-pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, TestError> {
+pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMismatch> {
     let src = Test::ptx(&t);
     let mut module = ptr::null_mut();
     let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
@@ -564,7 +564,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, TestErro
             let value = Test::Input::read(&inputs, i);
             let result = result;
             if let Err(expected) = t.host_verify(value, result) {
-                return Err(TestError {
+                return Err(ResultMismatch {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
                     expected: format!("{:?}", expected),
@@ -581,11 +581,48 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, TestErro
 }
 
 pub struct TestCase {
-    pub test: Box<dyn FnOnce(&Cuda) -> Result<bool, TestError>>,
+    pub test: Box<dyn FnOnce(&Cuda) -> Result<(), TestError>>,
     pub name: String,
 }
 
-pub struct TestError {
+impl TestCase {
+    pub fn new(name: String, test: Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>) -> Self {
+        let name_copy = name.clone();
+        let test = Box::new(move |cuda: &Cuda| match test(cuda) {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(TestError::Miscompile(name_copy)),
+            Err(err) => Err(TestError::Mismatch(err)),
+        });
+        TestCase { test, name }
+    }
+
+    pub fn join_invalid_tests(
+        name: String,
+        tests: Vec<(
+            String,
+            Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>,
+        )>,
+    ) -> Self {
+        let test = Box::new(move |cuda: &Cuda| {
+            for (name, test) in tests {
+                match test(cuda) {
+                    Ok(false) => {}
+                    Ok(true) => return Err(TestError::Miscompile(name)),
+                    Err(_) => return Err(TestError::Miscompile(name)),
+                }
+            }
+            Ok(())
+        });
+        TestCase { test, name }
+    }
+}
+
+pub enum TestError {
+    Miscompile(String),
+    Mismatch(ResultMismatch),
+}
+
+pub struct ResultMismatch {
     pub input: String,
     pub output: String,
     pub expected: String,

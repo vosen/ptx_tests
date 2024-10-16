@@ -18,10 +18,7 @@ where
 {
     let bits = mem::size_of::<u32>() * 8;
     let test = Box::new(move |cuda: &Cuda| test::run_range::<Brev<u32>>(cuda, Brev::<u32>::new()));
-    TestCase {
-        test,
-        name: format!("brev_b{}", bits),
-    }
+    TestCase::new(format!("brev_b{}", bits), test)
 }
 
 pub struct Brev<T: PtxScalar> {

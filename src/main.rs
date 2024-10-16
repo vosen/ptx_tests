@@ -1,3 +1,4 @@
+#![allow(internal_features)]
 #![feature(link_llvm_intrinsics)]
 #![feature(f16)]
 
@@ -5,7 +6,7 @@ use bpaf::Bpaf;
 use cuda::Cuda;
 use regex::{self, Regex};
 use std::ptr;
-use test::TestCase;
+use test::{TestCase, TestError};
 
 mod bfe;
 mod bfi;
@@ -73,13 +74,16 @@ fn run(args: Arguments) -> i32 {
             unsafe { cuda.cuCtxCreate_v2(&mut ctx, 0, 0) }.unwrap();
             for t in tests {
                 match (t.test)(&cuda) {
-                    Ok(true) => println!("{}: OK", t.name),
-                    Ok(false) => println!("{}: SKIP", t.name),
-                    Err(e) => {
+                    Ok(()) => println!("{}: OK", t.name),
+                    Err(TestError::Mismatch(e)) => {
                         println!(
                             "{}: FAIL: Input {}, computed on GPU {}, computed on CPU {}",
                             t.name, e.input, e.output, e.expected
                         );
+                        failures += 1;
+                    }
+                    Err(TestError::Miscompile(name)) => {
+                        println!("{}: FAIL: Compilation mismatch", name);
                         failures += 1;
                     }
                 }

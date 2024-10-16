@@ -1,6 +1,6 @@
 use crate::{
     cuda::{CUresult, Cuda},
-    test::{self, PtxScalar, TestCase, TestCommon},
+    test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
 };
 use num::traits::AsPrimitive;
 use num::{traits::ToBytes, Float, Integer};
@@ -74,32 +74,40 @@ fn is_invalid_cvt<Output: PtxScalar, Input: PtxScalar>(
 }
 
 macro_rules! gen_test {
-    ($vec:expr) => {
-        gen_test!($vec, [0,1,2,3,4,5,6,7,8]);
+    ($vec:expr, $invalid:expr) => {
+        gen_test!($vec, $invalid, [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
     };
-    ($vec:expr, [$($rnd:expr),*]) => {
+    ($vec:expr, $invalid:expr, [$($rnd:expr),*]) => {
         $(
-            gen_test!($vec, $rnd, [false, true]);
+            gen_test!($vec, $invalid, $rnd, [false, true]);
         )*
     };
-    ($vec:expr, $rnd:expr, [$($ftz:expr),*]) => {
+    ($vec:expr, $invalid:expr, $rnd:expr, [$($ftz:expr),*]) => {
         $(
-            gen_test!($vec, $rnd, $ftz, [false, true]);
+            gen_test!($vec, $invalid, $rnd, $ftz, [false, true]);
         )*
     };
-    ($vec:expr, $rnd:expr, $ftz:expr, [$($sat:expr),*]) => {
+    ($vec:expr, $invalid:expr, $rnd:expr, $ftz:expr, [$($sat:expr),*]) => {
         $(
-            gen_test!($vec, $rnd, $ftz, $sat, [i16, u16, i32, u32, half::f16, f32]);
+            gen_test!($vec, $invalid, $rnd, $ftz, $sat, [i16, u16, i32, u32, half::f16, f32]);
         )*
     };
-    ($vec:expr, $rnd:expr, $ftz:expr, $sat:expr, [$($input:ty),*]) => {
+    ($vec:expr, $invalid:expr, $rnd:expr, $ftz:expr, $sat:expr, [$($input:ty),*]) => {
         $(
-            gen_test!($vec, $rnd, $ftz, $sat, $input, [i16, u16, i32, u32, i64, u64, half::f16, f32, f64]);
+            gen_test!($vec, $invalid, $rnd, $ftz, $sat, $input, [i16, u16, i32, u32, i64, u64, half::f16, f32, f64]);
         )*
     };
-    ($vec:expr, $rnd:expr, $ftz:expr, $sat:expr, $input:ty, [$($output:ty),*]) => {
+    ($vec:expr, $invalid:expr, $rnd:expr, $ftz:expr, $sat:expr, $input:ty, [$($output:ty),*]) => {
         $(
-            $vec.push(test_case::<$output, $input>($rnd, $ftz, $sat));
+            {
+                let (name, test) = test_case::<$output, $input>($rnd, $ftz, $sat);
+                let rnd = unsafe { mem::transmute::<_, Rounding>($rnd) };
+                if is_invalid_cvt::<$output, $input>(rnd.as_ptx(), $ftz, $sat) {
+                    $invalid.push((name, test));
+                } else {
+                    $vec.push(test::TestCase::new(name, test));
+                }
+            }
         )*
     };
 }
@@ -223,7 +231,10 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
     rnd: u8,
     ftz: bool,
     sat: bool,
-) -> TestCase {
+) -> (
+    String,
+    Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>,
+) {
     let rnd_typed = unsafe { mem::transmute::<_, Rounding>(rnd) };
     let rnd_txt = match rnd_typed {
         Rounding::Default => "",
@@ -246,12 +257,17 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
     let test = Box::new(move |cuda: &Cuda| {
         test::run_range::<Cvt<To, From>>(cuda, Cvt::<To, From>::new(rnd, ftz, sat))
     });
-    TestCase { test, name }
+    (name, test)
 }
 
 pub(super) fn all_tests() -> Vec<TestCase> {
     let mut result = Vec::new();
-    gen_test!(result);
+    let mut invalid_tests = Vec::new();
+    gen_test!(result, invalid_tests);
+    result.push(TestCase::join_invalid_tests(
+        "cvt_invalid".to_string(),
+        invalid_tests,
+    ));
     result
 }
 
@@ -261,7 +277,7 @@ trait HostConvert<To: PtxScalar>: Copy {
 
 macro_rules! unimplemented_convert {
     () => {
-        unimplemented_convert!{ [i16, u16, i32, u32/*, half::f16,  f32 */] }
+        unimplemented_convert!{ [/* i16 , */ u16, i32, u32/*, half::f16,  f32 */] }
     };
     ([$($input:ty),*]) => {
         $(
@@ -418,7 +434,7 @@ macro_rules! float_to_int {
     ($input:ty, [$($output:ty),*]) => {
         $(
             impl HostConvert<$output> for $input {
-                fn convert(mut self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                fn convert(mut self, rnd: Rounding, ftz: bool, _sat: bool, expected: $output) -> Result<(), $output> {
                     use num::traits::AsPrimitive;
                     use num::traits::ConstZero;
                     if ftz {
@@ -433,8 +449,6 @@ macro_rules! float_to_int {
                     }  else {
                         FloatAsInteger::round(self, rnd).as_()
                     };
-                    //let rounded = FloatAsInteger::round(self, rnd);
-                    //let host_result: $output = unsafe { mem::transmute::<_, <$input as Underlying>::Target>(rounded) as $output };
                     if host_result.to_ne_bytes() != expected.to_ne_bytes() {
                         Err(host_result)
                     } else {
@@ -484,3 +498,48 @@ impl FloatAsInteger for half::f16 {
         unsafe { mem::transmute::<_, half::f16>(rnd_fn(this)) }
     }
 }
+
+macro_rules! int_to_int {
+    ([$($input:ty),*]) => {
+        $(
+            int_to_int! { $input, [i16, u16, i32, u32, i64, u64] }
+        )*
+    };
+    ($input:ty, [$($output:ty),*]) => {
+        $(
+            impl HostConvert<$output> for $input {
+                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                    assert!(!ftz);
+                    let result: $output = self.as_();
+                    if result.to_ne_bytes() != expected.to_ne_bytes() {
+                        Err(result)
+                    } else {
+                        Ok(())
+                    }
+                }
+            }
+        )*
+    };
+}
+
+int_to_int!([i16]);
+
+macro_rules! int_to_float {
+    ([$($input:ty),*]) => {
+        $(
+            int_to_float! { $input, [half::f16, f32, f64] }
+        )*
+    };
+    ($input:ty, [$($output:ty),*]) => {
+        $(
+            impl HostConvert<$output> for $input {
+                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                    use num::traits::ConstZero;
+                    Err(<$output>::ZERO)
+                }
+            }
+        )*
+    };
+}
+
+int_to_float!([i16]);

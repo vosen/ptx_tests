@@ -21,10 +21,7 @@ where
 {
     let bits = mem::size_of::<T>() * 8;
     let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfi<T>>(cuda));
-    TestCase {
-        test,
-        name: format!("bfi_rng_b{}", bits),
-    }
+    TestCase::new(format!("bfi_rng_b{}", bits), test)
 }
 
 pub struct Bfi<T: PtxScalar> {
