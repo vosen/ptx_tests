@@ -1,6 +1,6 @@
 use crate::cuda::Cuda;
 use half::f16;
-use num::{cast::AsPrimitive, Bounded, Num, PrimInt, Zero};
+use num::{Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{any::Any, fmt::Debug, mem, ptr, u32};

@@ -1,14 +1,12 @@
 use crate::{
-    cuda::{CUresult, Cuda},
+    cuda::Cuda,
     test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
 };
 use num::traits::AsPrimitive;
-use num::{traits::ToBytes, Float, Integer};
-use std::{
-    any::{self, Any, TypeId},
-    cmp::Ordering,
-    mem, ptr,
-};
+use num::traits::ConstOne;
+use num::traits::ConstZero;
+use num::Float;
+use std::mem;
 
 fn is_invalid_cvt<Output: PtxScalar, Input: PtxScalar>(
     rounding: &str,
@@ -75,7 +73,21 @@ fn is_invalid_cvt<Output: PtxScalar, Input: PtxScalar>(
 
 macro_rules! gen_test {
     ($vec:expr, $invalid:expr) => {
-        gen_test!($vec, $invalid, [0u8, 1u8, 2u8, 3u8, 4u8, 5u8, 6u8, 7u8, 8u8]);
+        gen_test!(
+            $vec,
+            $invalid,
+            [
+                Rounding::Default,
+                Rounding::Rni,
+                Rounding::Rzi,
+                Rounding::Rmi,
+                Rounding::Rpi,
+                Rounding::Rn,
+                Rounding::Rz,
+                Rounding::Rm,
+                Rounding::Rp
+            ]
+        );
     };
     ($vec:expr, $invalid:expr, [$($rnd:expr),*]) => {
         $(
@@ -101,8 +113,7 @@ macro_rules! gen_test {
         $(
             {
                 let (name, test) = test_case::<$output, $input>($rnd, $ftz, $sat);
-                let rnd = unsafe { mem::transmute::<_, Rounding>($rnd) };
-                if is_invalid_cvt::<$output, $input>(rnd.as_ptx(), $ftz, $sat) {
+                if is_invalid_cvt::<$output, $input>($rnd.as_ptx(), $ftz, $sat) {
                     $invalid.push((name, test));
                 } else {
                     $vec.push(test::TestCase::new(name, test));
@@ -113,14 +124,14 @@ macro_rules! gen_test {
 }
 
 struct Cvt<To: PtxScalar, From: PtxScalar> {
-    rnd: u8,
+    rnd: Rounding,
     ftz: bool,
     sat: bool,
     _phantom: std::marker::PhantomData<(To, From)>,
 }
 
 impl<To: PtxScalar, From: PtxScalar> Cvt<To, From> {
-    fn new(rnd: u8, ftz: bool, sat: bool) -> Self {
+    fn new(rnd: Rounding, ftz: bool, sat: bool) -> Self {
         Self {
             rnd,
             ftz,
@@ -136,16 +147,14 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
     type Output = To;
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
-        let rnd = unsafe { mem::transmute::<_, Rounding>(self.rnd) };
-        <Self::Input as HostConvert<Self::Output>>::convert(input, rnd, self.ftz, self.sat, output)
+        <Self::Input as HostConvert<Self::Output>>::convert(input, self.rnd, self.ftz, self.sat, output)
     }
 
     fn ptx(&self) -> String {
         let src = include_str!("cvt.ptx");
         let ftz = if self.ftz { ".ftz" } else { "" };
         let sat = if self.sat { ".sat" } else { "" };
-        let rnd = unsafe { mem::transmute::<_, Rounding>(self.rnd) };
-        let rnd = rnd.as_ptx();
+        let rnd = self.rnd.as_ptx();
         let modifiers = format!("{}{}{}", rnd, ftz, sat);
         let input_bits = mem::size_of::<Self::Input>() * 8;
         let output_bits = mem::size_of::<Self::Output>() * 8;
@@ -176,8 +185,7 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<T
         }
     }
     fn is_valid(&self) -> bool {
-        let rnd = unsafe { mem::transmute::<_, Rounding>(self.rnd) };
-        !is_invalid_cvt::<To, From>(rnd.as_ptx(), self.ftz, self.sat)
+        !is_invalid_cvt::<To, From>(self.rnd.as_ptx(), self.ftz, self.sat)
     }
 }
 
@@ -228,15 +236,14 @@ impl Rounding {
 }
 
 fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
-    rnd: u8,
+    rnd: Rounding,
     ftz: bool,
     sat: bool,
 ) -> (
     String,
     Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>,
 ) {
-    let rnd_typed = unsafe { mem::transmute::<_, Rounding>(rnd) };
-    let rnd_txt = match rnd_typed {
+    let rnd_txt = match rnd {
         Rounding::Default => "",
         Rounding::Rni => "_rni",
         Rounding::Rzi => "_rzi",
@@ -275,28 +282,6 @@ trait HostConvert<To: PtxScalar>: Copy {
     fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: To) -> Result<(), To>;
 }
 
-macro_rules! unimplemented_convert {
-    () => {
-        unimplemented_convert!{ [/* i16 , */ u16, i32, u32/*, half::f16,  f32 */] }
-    };
-    ([$($input:ty),*]) => {
-        $(
-            unimplemented_convert! {$input,  [i16, u16, i32, u32, i64, u64, half::f16, f32, f64] }
-        )*
-    };
-    ($input:ty, [$($output:ty),*]) => {
-        $(
-            impl HostConvert<$output> for $input {
-                fn convert(self, _: Rounding, _: bool, _: bool, expected: $output) -> Result<(), $output> {
-                    unimplemented!()
-                }
-            }
-        )*
-    };
-}
-
-unimplemented_convert!();
-
 // That's the easiest and most consistent way to set rounding mode in Rust, sorry
 extern "C" {
     #[link_name = "llvm.get.rounding"]
@@ -305,54 +290,70 @@ extern "C" {
     fn llvm_set_rounding(r: u32);
 }
 
-trait FloatToFloat<T> {
-    fn float_to_float(self) -> T;
+// IMPORTANT: This is a hack!
+// We use this trait purely to transmute half::f16 into f16 type to make sure that rustc emits
+// llvm assemblt. If we use half::f16, the library will emit its own x86 inline assembly,
+// which will ignore rounding mode set in LLVM
+// Using f16 directly is an even bigger problem because num-traits does not support it.
+trait ConvertAs<T> {
+    fn as_hack(self) -> T;
 }
 
-impl FloatToFloat<half::f16> for f32 {
-    fn float_to_float(self) -> half::f16 {
-        // IMPORTANT: This is a hack!
-        // We use unstable f16 type to make sure that rustc emits fptrunc
-        // If we use half::f16, the library will emit its own x86 inline assembly,
-        // which will ignore rounding mode set in LLVM
-        unsafe { mem::transmute(self as f16) }
-    }
-}
-
-impl FloatToFloat<f32> for f32 {
-    fn float_to_float(self) -> Self {
-        self
-    }
-}
-
-impl FloatToFloat<f64> for f32 {
-    fn float_to_float(self) -> f64 {
-        self as _
-    }
-}
-
-impl FloatToFloat<half::f16> for half::f16 {
-    fn float_to_float(self) -> Self {
-        self
-    }
-}
-
-impl FloatToFloat<f32> for half::f16 {
-    fn float_to_float(self) -> f32 {
-        self.as_()
-    }
-}
-
-impl FloatToFloat<f64> for half::f16 {
-    fn float_to_float(self) -> f64 {
-        self.as_()
-    }
-}
-
-macro_rules! float_to_float {
+macro_rules! convert_as {
+    () => {
+        convert_as! { [i16, u16, i32, u32, f32] }
+    };
     ([$($input:ty),*]) => {
         $(
-            float_to_float! { $input, [half::f16, f32, f64] }
+            convert_as! { $input, [i16, u16, i32, u32, i64, u64, f32, f64] }
+        )*
+    };
+    ($input:ty, [$($output:ty),*]) => {
+        $(
+            impl ConvertAs<$output> for $input {
+                fn as_hack(self) -> $output {
+                    self.as_()
+                }
+            }
+        )*
+
+        impl ConvertAs<half::f16> for $input {
+            fn as_hack(self) -> half::f16 {
+                unsafe { mem::transmute(self as f16) }
+            }
+        }
+    }
+}
+
+convert_as!();
+
+macro_rules! convert_as_from_f16 {
+    () => {
+        impl ConvertAs<half::f16> for half::f16 {
+            fn as_hack(self) -> half::f16 {
+                self
+            }
+        }
+
+        convert_as_from_f16! { [i16, u16, i32, u32, i64, u64, f32, f64]}
+    };
+    ([$($output:ty),*]) => {
+        $(
+            impl ConvertAs<$output> for half::f16 {
+                fn as_hack(self) -> $output {
+                    (unsafe { mem::transmute::<_, f16>(self) }) as $output
+                }
+            }
+        )*
+    };
+}
+
+convert_as_from_f16!();
+
+macro_rules! as_hack {
+    ([$($input:ty),*]) => {
+        $(
+            as_hack! { $input, [half::f16, f32, f64] }
         )*
     };
     ($input:ty, [$($output:ty),*]) => {
@@ -360,8 +361,6 @@ macro_rules! float_to_float {
             impl HostConvert<$output> for $input {
                 fn convert(mut self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
                     use num::traits::AsPrimitive;
-                    use num::traits::ConstZero;
-                    use num::traits::ConstOne;
                     if float_to_float_input_ftz::<$output, $input>(ftz, rnd) && self.is_subnormal() {
                         if self < <$input>::ZERO {
                             self = <$input>::neg_zero();
@@ -374,7 +373,7 @@ macro_rules! float_to_float {
                     } else {
                         let env_rnd = unsafe { llvm_get_rounding() };
                         unsafe { llvm_set_rounding(rnd.as_llvm()) };
-                        let host_result: $output = self.float_to_float();
+                        let host_result: $output = self.as_hack();
                         unsafe { llvm_set_rounding(env_rnd) };
                         host_result
                     };
@@ -423,7 +422,7 @@ fn float_to_float_input_ftz<To, From>(ftz: bool, rnd: Rounding) -> bool {
     }
 }
 
-float_to_float!([half::f16, f32]);
+as_hack!([half::f16, f32]);
 
 macro_rules! float_to_int {
     ([$($input:ty),*]) => {
@@ -436,7 +435,6 @@ macro_rules! float_to_int {
             impl HostConvert<$output> for $input {
                 fn convert(mut self, rnd: Rounding, ftz: bool, _sat: bool, expected: $output) -> Result<(), $output> {
                     use num::traits::AsPrimitive;
-                    use num::traits::ConstZero;
                     if ftz {
                         if self.is_subnormal() {
                             self = <$input>::ZERO;
@@ -508,9 +506,19 @@ macro_rules! int_to_int {
     ($input:ty, [$($output:ty),*]) => {
         $(
             impl HostConvert<$output> for $input {
-                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                fn convert(self, _rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
                     assert!(!ftz);
-                    let result: $output = self.as_();
+                    let result: $output = if sat {
+                        if (self as i128) <= (<$output>::MIN as i128) {
+                            <$output>::MIN
+                        } else if (self as i128) >= (<$output>::MAX as i128)  {
+                            <$output>::MAX
+                        } else {
+                            self.as_hack()
+                        }
+                    } else {
+                        self.as_hack()
+                    };
                     if result.to_ne_bytes() != expected.to_ne_bytes() {
                         Err(result)
                     } else {
@@ -522,7 +530,7 @@ macro_rules! int_to_int {
     };
 }
 
-int_to_int!([i16]);
+int_to_int!([i16, u16, i32, u32]);
 
 macro_rules! int_to_float {
     ([$($input:ty),*]) => {
@@ -533,13 +541,27 @@ macro_rules! int_to_float {
     ($input:ty, [$($output:ty),*]) => {
         $(
             impl HostConvert<$output> for $input {
-                fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
-                    use num::traits::ConstZero;
-                    Err(<$output>::ZERO)
+                fn convert(self, rnd: Rounding, _ftz: bool, sat: bool, expected: $output) -> Result<(), $output> {
+                    let env_rnd = unsafe { llvm_get_rounding() };
+                    unsafe { llvm_set_rounding(rnd.as_llvm()) };
+                    let mut host_result: $output = self.as_hack();
+                    unsafe { llvm_set_rounding(env_rnd) };
+                    if sat {
+                         if host_result <= <$output>::ZERO {
+                            host_result = <$output>::ZERO;
+                        } else if host_result > <$output>::ONE {
+                            host_result = <$output>::ONE;
+                        }
+                    }
+                    if host_result.to_ne_bytes() != expected.to_ne_bytes() {
+                        Err(host_result)
+                    } else {
+                        Ok(())
+                    }
                 }
             }
         )*
     };
 }
 
-int_to_float!([i16]);
+int_to_float!([i16, u16, i32, u32]);
