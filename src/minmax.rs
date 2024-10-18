@@ -1,8 +1,7 @@
 use crate::{
     common,
-    test::{self, PtxScalar, RangeTest, TestCase, TestCommon},
+    test::{self, RangeTest, TestCase, TestCommon},
 };
-use num::PrimInt;
 use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
@@ -12,6 +11,7 @@ pub(crate) fn all_tests() -> Vec<TestCase> {
     for ftz in [false, true] {
         for nan in [false, true] {
             tests.push(min(ftz, nan));
+            tests.push(max(ftz, nan));
         }
     }
     tests
@@ -29,6 +29,18 @@ fn min(ftz: bool, nan: bool) -> TestCase {
     )
 }
 
+fn max(ftz: bool, nan: bool) -> TestCase {
+    let name = format!(
+        "max{}{}",
+        if ftz { "_ftz" } else { "" },
+        if nan { "_nan" } else { "" }
+    );
+    TestCase::new(
+        name.to_string(),
+        Box::new(move |cuda| test::run_range::<Max>(cuda, Max { ftz, nan })),
+    )
+}
+
 struct Min {
     ftz: bool,
     nan: bool,
@@ -39,24 +51,11 @@ impl TestCommon for Min {
     type Output = half::f16;
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
-        fn min_host(mut a: half::f16, mut b: half::f16, nan: bool, ftz: bool) -> half::f16 {
-            common::flush_to_zero_f16(&mut a, ftz);
-            common::flush_to_zero_f16(&mut b, ftz);
-            if a.is_nan() && b.is_nan() {
-                half::f16::NAN
-            } else if nan && (a.is_nan() || b.is_nan()) {
-                half::f16::NAN
-            } else if a.is_nan() {
-                b
-            } else if b.is_nan() {
-                a
-            } else {
-                a.min(b)
-            }
-        }
         let (a, b) = input;
-        let expected = min_host(a, b, self.nan, self.ftz);
-        if expected.to_ne_bytes() == output.to_ne_bytes() {
+        let expected = minmax_host(a, b, self.nan, self.ftz, f16::min);
+        if (expected.is_nan() && output.is_nan())
+            || (expected.to_ne_bytes() == output.to_ne_bytes())
+        {
             Ok(())
         } else {
             Err(expected)
@@ -67,7 +66,7 @@ impl TestCommon for Min {
         let name = format!(
             "min{}{}.f16",
             if self.ftz { ".ftz" } else { "" },
-            if self.nan { ".nan" } else { "" }
+            if self.nan { ".NaN" } else { "" }
         );
         let mut src = PTX
             .replace("<TYPE_SIZE>", "2")
@@ -82,5 +81,75 @@ impl TestCommon for Min {
 impl RangeTest for Min {
     fn generate(&self, input: u32) -> Self::Input {
         unsafe { mem::transmute::<_, (half::f16, half::f16)>(input) }
+    }
+}
+
+struct Max {
+    ftz: bool,
+    nan: bool,
+}
+
+impl TestCommon for Max {
+    type Input = (half::f16, half::f16);
+    type Output = half::f16;
+
+    fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
+        let (a, b) = input;
+        let expected = minmax_host(a, b, self.nan, self.ftz, f16::max);
+        if (expected.is_nan() && output.is_nan())
+            || (expected.to_ne_bytes() == output.to_ne_bytes())
+        {
+            Ok(())
+        } else {
+            Err(expected)
+        }
+    }
+
+    fn ptx(&self) -> String {
+        let name = format!(
+            "max{}{}.f16",
+            if self.ftz { ".ftz" } else { "" },
+            if self.nan { ".NaN" } else { "" }
+        );
+        let mut src = PTX
+            .replace("<TYPE_SIZE>", "2")
+            .replace("<TYPE>", "f16")
+            .replace("<BTYPE>", "b16")
+            .replace("<OP>", &name);
+        src.push('\0');
+        src
+    }
+}
+
+impl RangeTest for Max {
+    fn generate(&self, input: u32) -> Self::Input {
+        unsafe { mem::transmute::<_, (half::f16, half::f16)>(input) }
+    }
+}
+
+fn minmax_host(
+    mut a: half::f16,
+    mut b: half::f16,
+    nan: bool,
+    ftz: bool,
+    fn_: fn(f16, f16) -> f16,
+) -> half::f16 {
+    common::flush_to_zero_f16(&mut a, ftz);
+    common::flush_to_zero_f16(&mut b, ftz);
+    if a.is_nan() && b.is_nan() {
+        half::f16::NAN
+    } else if nan && (a.is_nan() || b.is_nan()) {
+        half::f16::NAN
+    } else if a.is_nan() {
+        b
+    } else if b.is_nan() {
+        a
+    } else {
+        unsafe {
+            mem::transmute(fn_(
+                mem::transmute::<_, f16>(a),
+                mem::transmute::<_, f16>(b),
+            ))
+        }
     }
 }
