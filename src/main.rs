@@ -14,7 +14,9 @@ mod brev;
 mod common;
 mod cuda;
 mod cvt;
+mod minmax;
 mod rcp;
+mod shift;
 mod test;
 
 #[derive(Debug, Clone, Bpaf)]
@@ -53,6 +55,8 @@ fn tests() -> Vec<TestCase> {
     ];
     tests.extend(cvt::all_tests());
     tests.extend(rcp::all_tests());
+    tests.extend(shift::all_tests());
+    tests.extend(minmax::all_tests());
     tests
 }
 

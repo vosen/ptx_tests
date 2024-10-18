@@ -81,6 +81,9 @@ extern "C" {
 const MAX_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x807FFFFFu32) };
 const MAX_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x007FFFFFu32) };
 
+const MAX_NEGATIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x83FFu16) };
+const MAX_POSITIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x03FFu16) };
+
 pub fn flush_to_zero_f32<T: Float + Copy + 'static>(x: &mut T, ftz: bool)
 where
     f32: AsPrimitive<T>,
@@ -91,6 +94,20 @@ where
     if *x < T::neg_zero() && *x >= MAX_NEGATIVE_SUBNORMAL.as_() {
         *x = T::neg_zero()
     } else if *x > T::zero() && *x <= MAX_POSITIVE_SUBNORMAL.as_() {
+        *x = T::zero()
+    }
+}
+
+pub fn flush_to_zero_f16<T: Float + Copy + 'static>(x: &mut T, ftz: bool)
+where
+    half::f16: AsPrimitive<T>,
+{
+    if !ftz {
+        return;
+    }
+    if *x < T::neg_zero() && *x >= MAX_NEGATIVE_SUBNORMAL_F16.as_() {
+        *x = T::neg_zero()
+    } else if *x > T::zero() && *x <= MAX_POSITIVE_SUBNORMAL_F16.as_() {
         *x = T::zero()
     }
 }
