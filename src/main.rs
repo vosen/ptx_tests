@@ -11,8 +11,10 @@ use test::{TestCase, TestError};
 mod bfe;
 mod bfi;
 mod brev;
+mod common;
 mod cuda;
 mod cvt;
+mod rcp;
 mod test;
 
 #[derive(Debug, Clone, Bpaf)]
@@ -50,6 +52,7 @@ fn tests() -> Vec<TestCase> {
         brev::b32(),
     ];
     tests.extend(cvt::all_tests());
+    tests.extend(rcp::all_tests());
     tests
 }
 

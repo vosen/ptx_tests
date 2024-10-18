@@ -1,4 +1,6 @@
+use crate::common::{llvm_get_rounding, llvm_set_rounding};
 use crate::{
+    common::Rounding,
     cuda::Cuda,
     test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
 };
@@ -147,7 +149,9 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
     type Output = To;
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
-        <Self::Input as HostConvert<Self::Output>>::convert(input, self.rnd, self.ftz, self.sat, output)
+        <Self::Input as HostConvert<Self::Output>>::convert(
+            input, self.rnd, self.ftz, self.sat, output,
+        )
     }
 
     fn ptx(&self) -> String {
@@ -186,52 +190,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<T
     }
     fn is_valid(&self) -> bool {
         !is_invalid_cvt::<To, From>(self.rnd.as_ptx(), self.ftz, self.sat)
-    }
-}
-
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Rounding {
-    Default = 0,
-    Rni,
-    Rzi,
-    Rmi,
-    Rpi,
-    Rn,
-    Rz,
-    Rm,
-    Rp,
-}
-
-impl Rounding {
-    fn as_llvm(self) -> u32 {
-        match self {
-            Rounding::Rzi | Rounding::Rz => 0,
-            Rounding::Default | Rounding::Rni | Rounding::Rn => 1,
-            Rounding::Rpi | Rounding::Rp => 2,
-            Rounding::Rmi | Rounding::Rm => 3,
-        }
-    }
-
-    fn as_ptx(self) -> &'static str {
-        match self {
-            Rounding::Default => "",
-            Rounding::Rni => ".rni",
-            Rounding::Rzi => ".rzi",
-            Rounding::Rmi => ".rmi",
-            Rounding::Rpi => ".rpi",
-            Rounding::Rn => ".rn",
-            Rounding::Rz => ".rz",
-            Rounding::Rm => ".rm",
-            Rounding::Rp => ".rp",
-        }
-    }
-
-    fn is_integer(self) -> bool {
-        match self {
-            Rounding::Rzi | Rounding::Rni | Rounding::Rmi | Rounding::Rpi => true,
-            Rounding::Default | Rounding::Rz | Rounding::Rn | Rounding::Rm | Rounding::Rp => false,
-        }
     }
 }
 
@@ -280,14 +238,6 @@ pub(super) fn all_tests() -> Vec<TestCase> {
 
 trait HostConvert<To: PtxScalar>: Copy {
     fn convert(self, rnd: Rounding, ftz: bool, sat: bool, expected: To) -> Result<(), To>;
-}
-
-// That's the easiest and most consistent way to set rounding mode in Rust, sorry
-extern "C" {
-    #[link_name = "llvm.get.rounding"]
-    fn llvm_get_rounding() -> u32;
-    #[link_name = "llvm.set.rounding"]
-    fn llvm_set_rounding(r: u32);
 }
 
 // IMPORTANT: This is a hack!
