@@ -78,11 +78,11 @@ extern "C" {
     pub fn llvm_set_rounding(r: u32);
 }
 
-const MAX_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x807FFFFFu32) };
-const MAX_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x007FFFFFu32) };
+pub const MAX_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x807FFFFFu32) };
+pub const MAX_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x007FFFFFu32) };
 
-const MAX_NEGATIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x83FFu16) };
-const MAX_POSITIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x03FFu16) };
+pub const MAX_NEGATIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x83FFu16) };
+pub const MAX_POSITIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x03FFu16) };
 
 pub fn flush_to_zero_f32<T: Float + Copy + 'static>(x: &mut T, ftz: bool)
 where
