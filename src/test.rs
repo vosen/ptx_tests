@@ -487,7 +487,12 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
     unsafe { cuda.cuMemGetInfo_v2(&mut free_memory, &mut total_memory) }.unwrap();
     let max_memory = (total_memory / 2).min(SAFE_MEMORY_LIMIT);
     let total_elements = Test::MAX_VALUE as usize + 1;
-    assert!(total_elements % GROUP_SIZE == 0);
+    if total_elements % GROUP_SIZE != 0 {
+        panic!(
+            "Total element count {} must be divisble by {}",
+            total_elements, GROUP_SIZE
+        );
+    }
     let element_size = Test::Input::size_of() + Test::Output::size_of();
     let required_memory = total_elements * element_size;
     let iterations = (required_memory / max_memory).max(1);
@@ -565,9 +570,9 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
             let result = result;
             if let Err(expected) = t.host_verify(value, result) {
                 return Err(ResultMismatch {
-                    input: format!("{:?}", value),
-                    output: format!("{:?}", result),
-                    expected: format!("{:?}", expected),
+                    input: format!("{:.24?}", value),
+                    output: format!("{:.24?}", result),
+                    expected: format!("{:.24?}", expected),
                 });
             }
         }

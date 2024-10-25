@@ -8,11 +8,13 @@ pub static PTX: &str = include_str!("sqrt.ptx");
 pub(crate) fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
     for ftz in [false, true] {
-        tests.push(sqrt_rnd(Rounding::Rn, ftz));
-        tests.push(sqrt_rnd(Rounding::Rz, ftz));
-        tests.push(sqrt_rnd(Rounding::Rm, ftz));
-        tests.push(sqrt_rnd(Rounding::Rp, ftz));
         tests.push(sqrt_approx(ftz));
+        tests.push(sqrt_rnd(Rounding::Rn, ftz));
+        if cfg!(not(windows)) {
+            tests.push(sqrt_rnd(Rounding::Rz, ftz));
+            tests.push(sqrt_rnd(Rounding::Rm, ftz));
+            tests.push(sqrt_rnd(Rounding::Rp, ftz));
+        }
     }
     tests
 }
@@ -57,10 +59,6 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
         mut input: Self::Input,
         output: Self::Output,
     ) -> Result<(), Self::Output> {
-        fn sqrt_host(input: f32) -> f64 {
-            let input = input as f64;
-            input.sqrt()
-        }
         fn sqrt_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
@@ -96,10 +94,7 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
                 }
             }
         } else {
-            //let precise_result = sqrt_host(input);
-            //let mut result = self.rnd.with(|| precise_result as f32);
-            let rnd = rug_round(self.rnd);
-            let precise_result = rug::Float::with_val_round(23, input).sqrt().to_f32();
+            let mut result = os::sqrt_rnd(input, self.rnd);
             flush_to_zero_f32(&mut result, self.ftz);
             if result.is_nan() && output.is_nan() {
                 Ok(())
@@ -111,15 +106,6 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
                 }
             }
         }
-    }
-}
-
-fn rug_round(rnd: Rounding) -> rug::float::Round {
-    match rnd {
-        Rounding::Rzi | Rounding::Rz => rug::float::Round::Zero,
-        Rounding::Default | Rounding::Rni | Rounding::Rn => rug::float::Round::Nearest,
-        Rounding::Rpi | Rounding::Rp => rug::float::Round::Up,
-        Rounding::Rmi | Rounding::Rm => rug::float::Round::Down,
     }
 }
 
@@ -154,5 +140,41 @@ impl<const APPROX: bool> RangeTest for Sqrt<APPROX> {
         } else {
             unsafe { mem::transmute::<_, f32>(input) }
         }
+    }
+}
+
+fn sqrt_host(input: f32) -> f64 {
+    let input = input as f64;
+    input.sqrt()
+}
+
+#[cfg(not(windows))]
+mod os {
+    use crate::common::Rounding;
+
+    fn rug_round(rnd: Rounding) -> rug::float::Round {
+        match rnd {
+            Rounding::Rzi | Rounding::Rz => rug::float::Round::Zero,
+            Rounding::Default | Rounding::Rni | Rounding::Rn => rug::float::Round::Nearest,
+            Rounding::Rpi | Rounding::Rp => rug::float::Round::Up,
+            Rounding::Rmi | Rounding::Rm => rug::float::Round::Down,
+        }
+    }
+
+    pub fn sqrt_rnd(input: f32, rnd: Rounding) -> f32 {
+        let rnd = rug_round(rnd);
+        let mut input = rug::Float::with_val_round(24, input, rnd).0;
+        input.sqrt_round(rnd);
+        input.to_f32_round(rnd)
+    }
+}
+
+#[cfg(windows)]
+mod os {
+    use crate::common::Rounding;
+
+    pub fn sqrt_rnd(input: f32, rnd: Rounding) -> f32 {
+        let precise_result = super::sqrt_host(input);
+        rnd.with(|| precise_result as f32)
     }
 }

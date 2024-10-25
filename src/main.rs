@@ -12,11 +12,15 @@ mod bfe;
 mod bfi;
 mod brev;
 mod common;
+mod cos;
 mod cuda;
 mod cvt;
+mod lg2;
 mod minmax;
 mod rcp;
+mod rsqrt;
 mod shift;
+mod sin;
 mod sqrt;
 mod test;
 
@@ -59,6 +63,10 @@ fn tests() -> Vec<TestCase> {
     tests.extend(shift::all_tests());
     tests.extend(minmax::all_tests());
     tests.extend(sqrt::all_tests());
+    tests.extend(rsqrt::all_tests());
+    tests.extend(sin::all_tests());
+    tests.extend(cos::all_tests());
+    tests.extend(lg2::all_tests());
     tests
 }
 
