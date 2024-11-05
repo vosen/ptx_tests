@@ -37,3 +37,7 @@ Print help message:
 ```
 cargo +nightly run -r -- -h
 ```
+
+# License
+
+This software is dual-licensed under either the Apache 2.0 license or the MIT license. See [LICENSE-APACHE](LICENSE-APACHE) or [LICENSE-MIT](LICENSE-MIT) for details
