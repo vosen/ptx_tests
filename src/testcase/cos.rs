@@ -1,38 +1,39 @@
 use crate::common::{self, flush_to_zero_f32};
 use crate::cuda::Cuda;
 use crate::test::{self, RangeTest, TestCase, TestCommon};
+use core::f32;
 use std::mem;
 
-pub static PTX: &str = include_str!("rsqrt.ptx");
+pub static PTX: &str = include_str!("cos.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
     for ftz in [false, true] {
-        tests.push(rsqrt_approx(ftz));
+        tests.push(cos(ftz));
     }
     tests
 }
 
-fn rsqrt_approx(ftz: bool) -> TestCase {
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<SqrtApprox>(cuda, SqrtApprox { ftz }));
+fn cos(ftz: bool) -> TestCase {
+    let test = Box::new(move |cuda: &Cuda| test::run_range::<Cos>(cuda, Cos { ftz }));
     let ftz = if ftz { "_ftz" } else { "" };
-    TestCase::new(format!("rsqrt_approx{}", ftz), test)
+    TestCase::new(format!("cos_approx{}", ftz), test)
 }
 
-pub struct SqrtApprox {
+pub struct Cos {
     ftz: bool,
 }
 
-const APPROX_TOLERANCE: f64 = 0.00000018068749505405403165188548580484929545894665f64; // 2^-22.4
+const APPROX_TOLERANCE: f64 = 0.00000051106141211332948885584179164092160363501768f64; // 2^-20.9
 
-impl TestCommon for SqrtApprox {
+impl TestCommon for Cos {
     type Input = f32;
 
     type Output = f32;
 
     fn ptx(&self) -> String {
-        let mode = format!("approx{}", if self.ftz { ".ftz" } else { "" });
-        let mut src = PTX.replace("<MODE>", &mode);
+        let ftz = if self.ftz { ".ftz" } else { "" };
+        let mut src = PTX.replace("<FTZ>", &ftz);
         src.push('\0');
         src
     }
@@ -42,29 +43,30 @@ impl TestCommon for SqrtApprox {
         mut input: Self::Input,
         output: Self::Output,
     ) -> Result<(), Self::Output> {
-        fn rsqrt_approx_special(input: f32) -> Option<f32> {
+        fn cos_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
-                f if f.is_normal() && f.is_sign_negative() => f32::NAN,
-                f if f.is_subnormal() && f.is_sign_negative() => f32::NEG_INFINITY,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => f32::NEG_INFINITY,
-                0.0 => f32::INFINITY,
-                f if f.is_subnormal() && f.is_sign_positive() => f32::INFINITY,
-                f32::INFINITY => 0.0,
+                f if f.is_subnormal() && f.is_sign_negative() => 1.0,
+                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => 1.0,
+                0.0 => 1.0,
+                f if f.is_subnormal() && f.is_sign_positive() => 1.0,
+                f32::INFINITY => f32::NAN,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
             })
         }
         flush_to_zero_f32(&mut input, self.ftz);
-        if let Some(mut expected) = rsqrt_approx_special(input) {
+        if let Some(mut expected) = cos_approx_special(input) {
             flush_to_zero_f32(&mut expected, self.ftz);
-            if expected.to_ne_bytes() == output.to_ne_bytes() {
+            if (expected.is_nan() && output.is_nan())
+                || (expected.to_ne_bytes() == output.to_ne_bytes())
+            {
                 Ok(())
             } else {
                 Err(expected)
             }
         } else {
-            let precise_result = rsqrt_host(input);
+            let precise_result = cos_host(input);
             let mut result_f32 = precise_result as f32;
             flush_to_zero_f32(&mut result_f32, self.ftz);
             let precise_output = output as f64;
@@ -78,13 +80,12 @@ impl TestCommon for SqrtApprox {
     }
 }
 
-const RANGE_MIN: f32 = 1f32;
-const RANGE_MAX: f32 = 4f32;
+const RANGE_MIN: f32 = 0f32;
+const RANGE_MAX: f32 = f32::consts::FRAC_PI_2;
 
-impl RangeTest for SqrtApprox {
+impl RangeTest for Cos {
     const MAX_VALUE: u32 =
-        (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) })
-            + 127;
+        (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) }) + 36;
 
     fn generate(&self, input: u32) -> Self::Input {
         let max_number = unsafe { mem::transmute::<_, u32>(RANGE_MAX) };
@@ -106,7 +107,7 @@ impl RangeTest for SqrtApprox {
     }
 }
 
-fn rsqrt_host(input: f32) -> f64 {
+fn cos_host(input: f32) -> f64 {
     let input = input as f64;
-    input.sqrt().recip()
+    input.cos()
 }

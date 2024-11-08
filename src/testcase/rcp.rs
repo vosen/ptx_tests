@@ -5,7 +5,7 @@ use std::mem;
 
 pub static PTX: &str = include_str!("rcp.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
     for ftz in [false, true] {
         tests.push(rcp_rnd(Rounding::Rn, ftz));
@@ -17,10 +17,11 @@ pub(crate) fn all_tests() -> Vec<TestCase> {
     tests
 }
 
-pub(super) fn rcp_rnd(rnd: Rounding, ftz: bool) -> TestCase {
+fn rcp_rnd(rnd: Rounding, ftz: bool) -> TestCase {
     rcp::<false>(rnd, ftz)
 }
-pub(super) fn rcp_approx(ftz: bool) -> TestCase {
+
+fn rcp_approx(ftz: bool) -> TestCase {
     rcp::<true>(Rounding::Default, ftz)
 }
 

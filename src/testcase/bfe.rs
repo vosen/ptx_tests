@@ -9,17 +9,13 @@ use std::mem;
 
 pub static PTX: &str = include_str!("bfe.ptx");
 
-pub(super) fn rng_u32() -> TestCase {
-    bfe_rng::<u32>()
-}
-pub(super) fn rng_s32() -> TestCase {
-    bfe_rng::<i32>()
-}
-pub(super) fn rng_u64() -> TestCase {
-    bfe_rng::<u64>()
-}
-pub(super) fn rng_s64() -> TestCase {
-    bfe_rng::<i64>()
+pub fn all_tests() -> Vec<TestCase> {
+    vec![
+        bfe_rng::<u32>(),
+        bfe_rng::<i32>(),
+        bfe_rng::<u64>(),
+        bfe_rng::<i64>(),
+    ]
 }
 
 fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default>() -> TestCase

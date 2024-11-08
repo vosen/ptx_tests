@@ -8,8 +8,10 @@ use std::mem;
 
 pub static PTX: &str = include_str!("brev.ptx");
 
-pub(super) fn b32() -> TestCase {
-    brev()
+pub fn all_tests() -> Vec<TestCase> {
+    vec![
+        brev(),
+    ]
 }
 
 fn brev() -> TestCase

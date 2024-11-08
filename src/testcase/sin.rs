@@ -4,29 +4,29 @@ use crate::test::{self, RangeTest, TestCase, TestCommon};
 use core::f32;
 use std::mem;
 
-pub static PTX: &str = include_str!("cos.ptx");
+pub static PTX: &str = include_str!("sin.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
     for ftz in [false, true] {
-        tests.push(cos(ftz));
+        tests.push(sin(ftz));
     }
     tests
 }
 
-fn cos(ftz: bool) -> TestCase {
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Cos>(cuda, Cos { ftz }));
+fn sin(ftz: bool) -> TestCase {
+    let test = Box::new(move |cuda: &Cuda| test::run_range::<Sin>(cuda, Sin { ftz }));
     let ftz = if ftz { "_ftz" } else { "" };
-    TestCase::new(format!("cos_approx{}", ftz), test)
+    TestCase::new(format!("sin_approx{}", ftz), test)
 }
 
-pub struct Cos {
+pub struct Sin {
     ftz: bool,
 }
 
 const APPROX_TOLERANCE: f64 = 0.00000051106141211332948885584179164092160363501768f64; // 2^-20.9
 
-impl TestCommon for Cos {
+impl TestCommon for Sin {
     type Input = f32;
 
     type Output = f32;
@@ -43,20 +43,20 @@ impl TestCommon for Cos {
         mut input: Self::Input,
         output: Self::Output,
     ) -> Result<(), Self::Output> {
-        fn cos_approx_special(input: f32) -> Option<f32> {
+        fn sin_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
-                f if f.is_subnormal() && f.is_sign_negative() => 1.0,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => 1.0,
-                0.0 => 1.0,
-                f if f.is_subnormal() && f.is_sign_positive() => 1.0,
+                f if f.is_subnormal() && f.is_sign_negative() => -0.0,
+                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => -0.0,
+                0.0 => 0.0,
+                f if f.is_subnormal() && f.is_sign_positive() => 0.0,
                 f32::INFINITY => f32::NAN,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
             })
         }
         flush_to_zero_f32(&mut input, self.ftz);
-        if let Some(mut expected) = cos_approx_special(input) {
+        if let Some(mut expected) = sin_approx_special(input) {
             flush_to_zero_f32(&mut expected, self.ftz);
             if (expected.is_nan() && output.is_nan())
                 || (expected.to_ne_bytes() == output.to_ne_bytes())
@@ -66,7 +66,7 @@ impl TestCommon for Cos {
                 Err(expected)
             }
         } else {
-            let precise_result = cos_host(input);
+            let precise_result = sin_host(input);
             let mut result_f32 = precise_result as f32;
             flush_to_zero_f32(&mut result_f32, self.ftz);
             let precise_output = output as f64;
@@ -83,7 +83,7 @@ impl TestCommon for Cos {
 const RANGE_MIN: f32 = 0f32;
 const RANGE_MAX: f32 = f32::consts::FRAC_PI_2;
 
-impl RangeTest for Cos {
+impl RangeTest for Sin {
     const MAX_VALUE: u32 =
         (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) }) + 36;
 
@@ -98,7 +98,6 @@ impl RangeTest for Cos {
                 5 => common::MAX_POSITIVE_SUBNORMAL,
                 6 => f32::INFINITY,
                 7 => f32::NAN,
-                8 => -1.0,
                 _ => 0.0,
             }
         } else {
@@ -107,7 +106,7 @@ impl RangeTest for Cos {
     }
 }
 
-fn cos_host(input: f32) -> f64 {
+fn sin_host(input: f32) -> f64 {
     let input = input as f64;
-    input.cos()
+    input.sin()
 }

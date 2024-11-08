@@ -8,11 +8,11 @@ use std::mem;
 
 pub static PTX: &str = include_str!("bfi.ptx");
 
-pub(super) fn rng_b32() -> TestCase {
-    bfi_rng::<u32>()
-}
-pub(super) fn rng_b64() -> TestCase {
-    bfi_rng::<u64>()
+pub fn all_tests() -> Vec<TestCase> {
+    vec![
+        bfi_rng::<u32>(),
+        bfi_rng::<u64>(),
+    ]
 }
 
 fn bfi_rng<T: PtxScalar + PrimInt + AsPrimitive<usize> + Default>() -> TestCase

@@ -2,27 +2,19 @@
 #![feature(link_llvm_intrinsics)]
 #![feature(f16)]
 
-use bpaf::Bpaf;
-use cuda::Cuda;
-use regex::{self, Regex};
 use std::ptr;
-use test::{TestCase, TestError};
 
-mod bfe;
-mod bfi;
-mod brev;
+use bpaf::Bpaf;
+use regex::{self, Regex};
+
+use cuda::Cuda;
+use test::TestError;
+use testcase::*;
+
 mod common;
-mod cos;
 mod cuda;
-mod cvt;
-mod lg2;
-mod minmax;
-mod rcp;
-mod rsqrt;
-mod shift;
-mod sin;
-mod sqrt;
 mod test;
+mod testcase;
 
 #[derive(Debug, Clone, Bpaf)]
 #[bpaf(options)]
@@ -46,28 +38,6 @@ pub enum Arguments {
 fn main() {
     let args = arguments().run();
     std::process::exit(run(args));
-}
-
-fn tests() -> Vec<TestCase> {
-    let mut tests = vec![
-        bfe::rng_u32(),
-        bfe::rng_s32(),
-        bfe::rng_u64(),
-        bfe::rng_s64(),
-        bfi::rng_b32(),
-        bfi::rng_b64(),
-        brev::b32(),
-    ];
-    tests.extend(cvt::all_tests());
-    tests.extend(rcp::all_tests());
-    tests.extend(shift::all_tests());
-    tests.extend(minmax::all_tests());
-    tests.extend(sqrt::all_tests());
-    tests.extend(rsqrt::all_tests());
-    tests.extend(sin::all_tests());
-    tests.extend(cos::all_tests());
-    tests.extend(lg2::all_tests());
-    tests
 }
 
 fn run(args: Arguments) -> i32 {

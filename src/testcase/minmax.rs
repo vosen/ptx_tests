@@ -6,7 +6,7 @@ use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = Vec::new();
     for ftz in [false, true] {
         for nan in [false, true] {

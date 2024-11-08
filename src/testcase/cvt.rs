@@ -225,7 +225,7 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
     (name, test)
 }
 
-pub(super) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut result = Vec::new();
     let mut invalid_tests = Vec::new();
     gen_test!(result, invalid_tests);

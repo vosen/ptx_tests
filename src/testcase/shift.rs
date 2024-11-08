@@ -4,7 +4,7 @@ use std::mem;
 
 pub static PTX: &str = include_str!("shift.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     vec![
         TestCase::new(
             "shl_b16".to_string(),

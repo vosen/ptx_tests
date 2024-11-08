@@ -1,43 +1,38 @@
-use rug::Float;
-
 use crate::common::{self, flush_to_zero_f32};
 use crate::cuda::Cuda;
 use crate::test::{self, RangeTest, TestCase, TestCommon};
-use core::f32;
 use std::mem;
 
-pub static PTX: &str = include_str!("lg2.ptx");
+pub static PTX: &str = include_str!("rsqrt.ptx");
 
-const PRECISION: u32 = 64;
-
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
-    // we don't test any input or output that could be flushed
-    tests.push(lg2(false));
+    for ftz in [false, true] {
+        tests.push(rsqrt_approx(ftz));
+    }
     tests
 }
 
-fn lg2(ftz: bool) -> TestCase {
-    let mut tolerance = Float::with_val(PRECISION, -22.6f64);
-    tolerance.exp2_mut();
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Lg2>(cuda, Lg2 { ftz, tolerance }));
+fn rsqrt_approx(ftz: bool) -> TestCase {
+    let test = Box::new(move |cuda: &Cuda| test::run_range::<SqrtApprox>(cuda, SqrtApprox { ftz }));
     let ftz = if ftz { "_ftz" } else { "" };
-    TestCase::new(format!("lg2_approx{}", ftz), test)
+    TestCase::new(format!("rsqrt_approx{}", ftz), test)
 }
 
-pub struct Lg2 {
+pub struct SqrtApprox {
     ftz: bool,
-    tolerance: Float,
 }
 
-impl TestCommon for Lg2 {
+const APPROX_TOLERANCE: f64 = 0.00000018068749505405403165188548580484929545894665f64; // 2^-22.4
+
+impl TestCommon for SqrtApprox {
     type Input = f32;
 
     type Output = f32;
 
     fn ptx(&self) -> String {
-        let ftz = if self.ftz { ".ftz" } else { "" };
-        let mut src = PTX.replace("<FTZ>", &ftz);
+        let mode = format!("approx{}", if self.ftz { ".ftz" } else { "" });
+        let mut src = PTX.replace("<MODE>", &mode);
         src.push('\0');
         src
     }
@@ -47,37 +42,37 @@ impl TestCommon for Lg2 {
         mut input: Self::Input,
         output: Self::Output,
     ) -> Result<(), Self::Output> {
-        fn lg2_approx_special(input: f32) -> Option<f32> {
+        fn rsqrt_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
+                f if f.is_normal() && f.is_sign_negative() => f32::NAN,
                 f if f.is_subnormal() && f.is_sign_negative() => f32::NEG_INFINITY,
                 f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => f32::NEG_INFINITY,
-                0.0 => f32::NEG_INFINITY,
-                f if f.is_subnormal() && f.is_sign_positive() => f32::NEG_INFINITY,
-                f32::INFINITY => f32::INFINITY,
+                0.0 => f32::INFINITY,
+                f if f.is_subnormal() && f.is_sign_positive() => f32::INFINITY,
+                f32::INFINITY => 0.0,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
             })
         }
         flush_to_zero_f32(&mut input, self.ftz);
-        if let Some(mut expected) = lg2_approx_special(input) {
+        if let Some(mut expected) = rsqrt_approx_special(input) {
             flush_to_zero_f32(&mut expected, self.ftz);
-            if (expected.is_nan() && output.is_nan())
-                || (expected.to_ne_bytes() == output.to_ne_bytes())
-            {
+            if expected.to_ne_bytes() == output.to_ne_bytes() {
                 Ok(())
             } else {
                 Err(expected)
             }
         } else {
-            let precise_result = lg2_host(input);
-            let actual_result = Float::with_val(PRECISION, output);
-            let mut diff = precise_result.clone() - actual_result.clone();
-            diff = diff.abs();
-            if diff <= self.tolerance {
+            let precise_result = rsqrt_host(input);
+            let mut result_f32 = precise_result as f32;
+            flush_to_zero_f32(&mut result_f32, self.ftz);
+            let precise_output = output as f64;
+            let diff = (precise_output - result_f32 as f64).abs();
+            if diff <= APPROX_TOLERANCE {
                 Ok(())
             } else {
-                Err(precise_result.to_f32())
+                Err(precise_result as f32)
             }
         }
     }
@@ -86,7 +81,7 @@ impl TestCommon for Lg2 {
 const RANGE_MIN: f32 = 1f32;
 const RANGE_MAX: f32 = 4f32;
 
-impl RangeTest for Lg2 {
+impl RangeTest for SqrtApprox {
     const MAX_VALUE: u32 =
         (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) })
             + 127;
@@ -102,6 +97,7 @@ impl RangeTest for Lg2 {
                 5 => common::MAX_POSITIVE_SUBNORMAL,
                 6 => f32::INFINITY,
                 7 => f32::NAN,
+                8 => -1.0,
                 _ => 0.0,
             }
         } else {
@@ -110,7 +106,7 @@ impl RangeTest for Lg2 {
     }
 }
 
-fn lg2_host(input: f32) -> rug::Float {
-    let input = rug::Float::with_val(PRECISION, input);
-    input.log2()
+fn rsqrt_host(input: f32) -> f64 {
+    let input = input as f64;
+    input.sqrt().recip()
 }

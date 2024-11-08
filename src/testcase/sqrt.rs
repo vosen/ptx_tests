@@ -5,7 +5,7 @@ use std::mem;
 
 pub static PTX: &str = include_str!("sqrt.ptx");
 
-pub(crate) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
     for ftz in [false, true] {
         tests.push(sqrt_approx(ftz));
@@ -19,10 +19,11 @@ pub(crate) fn all_tests() -> Vec<TestCase> {
     tests
 }
 
-pub(super) fn sqrt_rnd(rnd: Rounding, ftz: bool) -> TestCase {
+fn sqrt_rnd(rnd: Rounding, ftz: bool) -> TestCase {
     sqrt::<false>(rnd, ftz)
 }
-pub(super) fn sqrt_approx(ftz: bool) -> TestCase {
+
+fn sqrt_approx(ftz: bool) -> TestCase {
     sqrt::<true>(Rounding::Default, ftz)
 }
 
