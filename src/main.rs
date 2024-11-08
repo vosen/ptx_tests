@@ -1,6 +1,7 @@
 #![allow(internal_features)]
 #![feature(link_llvm_intrinsics)]
 #![feature(f16)]
+#![feature(c_size_t)]
 
 use std::ptr;
 
@@ -13,6 +14,7 @@ use testcase::*;
 
 mod common;
 mod cuda;
+mod nvrtc;
 mod test;
 mod testcase;
 
@@ -86,4 +88,19 @@ fn run(args: Arguments) -> i32 {
     }
 
     failures
+}
+
+#[macro_export]
+macro_rules! impl_library {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* $(,)* ) -> $ret_type:path);* $(;)*) => {
+        $(
+            #[allow(non_snake_case)]
+            #[allow(improper_ctypes)]
+            pub unsafe fn $fn_name(&self,  $( $arg_id : $arg_type),*) -> $ret_type {
+                let fn_: libloading::Symbol<unsafe extern $abi fn( $($arg_type),*) -> $ret_type> =
+                    self.library.get(concat!(stringify!($fn_name), "\0").as_bytes()).unwrap();
+                fn_( $($arg_id),*)
+            }
+        )*
+    };
 }
