@@ -1,8 +1,7 @@
 use rug::Float;
 
 use crate::common::{self, flush_to_zero_f32};
-use crate::cuda::Cuda;
-use crate::test::{self, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use core::f32;
 use std::mem;
 
@@ -20,7 +19,7 @@ pub fn all_tests() -> Vec<TestCase> {
 fn lg2(ftz: bool) -> TestCase {
     let mut tolerance = Float::with_val(PRECISION, -22.6f64);
     tolerance.exp2_mut();
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Lg2>(cuda, Lg2 { ftz, tolerance }));
+    let test = make_range(Lg2 { ftz, tolerance });
     let ftz = if ftz { "_ftz" } else { "" };
     TestCase::new(format!("lg2_approx{}", ftz), test)
 }
@@ -30,17 +29,24 @@ pub struct Lg2 {
     tolerance: Float,
 }
 
+impl TestPtx for Lg2 {
+    fn body(&self) -> String {
+        let ftz = if self.ftz { ".ftz" } else { "" };
+        PTX.replace("<FTZ>", &ftz)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl TestCommon for Lg2 {
     type Input = f32;
 
     type Output = f32;
-
-    fn ptx(&self) -> String {
-        let ftz = if self.ftz { ".ftz" } else { "" };
-        let mut src = PTX.replace("<FTZ>", &ftz);
-        src.push('\0');
-        src
-    }
 
     fn host_verify(
         &self,

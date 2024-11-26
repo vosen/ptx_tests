@@ -1,6 +1,5 @@
 use crate::common::{self, flush_to_zero_f32, Rounding};
-use crate::cuda::Cuda;
-use crate::test::{self, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use std::mem;
 
 pub static PTX: &str = include_str!("sqrt.ptx");
@@ -28,8 +27,7 @@ fn sqrt_approx(ftz: bool) -> TestCase {
 }
 
 fn sqrt<const APPROX: bool>(rnd: Rounding, ftz: bool) -> TestCase {
-    let test =
-        Box::new(move |cuda: &Cuda| test::run_range::<Sqrt<APPROX>>(cuda, Sqrt { rnd, ftz }));
+    let test = make_range::<Sqrt<APPROX>>(Sqrt { rnd, ftz });
     let mode = if APPROX { "approx" } else { rnd.as_str() };
     let ftz = if ftz { "_ftz" } else { "" };
     TestCase::new(format!("sqrt_{}{}", mode, ftz), test)
@@ -42,18 +40,25 @@ pub struct Sqrt<const APPROX: bool> {
 
 const APPROX_TOLERANCE: f64 = 0.00000011920928955078125f64; // 2^-23
 
+impl<const APPROX: bool> TestPtx for Sqrt<APPROX> {
+    fn body(&self) -> String {
+        let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
+        let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
+        PTX.replace("<MODE>", &mode)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
     type Input = f32;
 
     type Output = f32;
-
-    fn ptx(&self) -> String {
-        let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
-        let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
-        let mut src = PTX.replace("<MODE>", &mode);
-        src.push('\0');
-        src
-    }
 
     fn host_verify(
         &self,

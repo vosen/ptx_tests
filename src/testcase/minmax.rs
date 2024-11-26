@@ -1,7 +1,4 @@
-use crate::{
-    common,
-    test::{self, RangeTest, TestCase, TestCommon},
-};
+use crate::{common, test::{make_range, RangeTest, TestCase, TestCommon, TestPtx}};
 use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
@@ -25,7 +22,7 @@ fn min(ftz: bool, nan: bool) -> TestCase {
     );
     TestCase::new(
         name.to_string(),
-        Box::new(move |cuda| test::run_range::<Min>(cuda, Min { ftz, nan })),
+        make_range(Min { ftz, nan }),
     )
 }
 
@@ -37,13 +34,36 @@ fn max(ftz: bool, nan: bool) -> TestCase {
     );
     TestCase::new(
         name.to_string(),
-        Box::new(move |cuda| test::run_range::<Max>(cuda, Max { ftz, nan })),
+        make_range(Max { ftz, nan }),
     )
 }
 
 struct Min {
     ftz: bool,
     nan: bool,
+}
+
+impl TestPtx for Min {
+    fn body(&self) -> String {
+        let name = format!(
+            "min{}{}.f16",
+            if self.ftz { ".ftz" } else { "" },
+            if self.nan { ".NaN" } else { "" }
+        );
+        PTX
+            .replace("<TYPE_SIZE>", "2")
+            .replace("<TYPE>", "f16")
+            .replace("<BTYPE>", "b16")
+            .replace("<OP>", &name)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
 }
 
 impl TestCommon for Min {
@@ -61,21 +81,6 @@ impl TestCommon for Min {
             Err(expected)
         }
     }
-
-    fn ptx(&self) -> String {
-        let name = format!(
-            "min{}{}.f16",
-            if self.ftz { ".ftz" } else { "" },
-            if self.nan { ".NaN" } else { "" }
-        );
-        let mut src = PTX
-            .replace("<TYPE_SIZE>", "2")
-            .replace("<TYPE>", "f16")
-            .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
-    }
 }
 
 impl RangeTest for Min {
@@ -87,6 +92,29 @@ impl RangeTest for Min {
 struct Max {
     ftz: bool,
     nan: bool,
+}
+
+impl TestPtx for Max {
+    fn body(&self) -> String {
+        let name = format!(
+            "max{}{}.f16",
+            if self.ftz { ".ftz" } else { "" },
+            if self.nan { ".NaN" } else { "" }
+        );
+        PTX
+            .replace("<TYPE_SIZE>", "2")
+            .replace("<TYPE>", "f16")
+            .replace("<BTYPE>", "b16")
+            .replace("<OP>", &name)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
 }
 
 impl TestCommon for Max {
@@ -103,21 +131,6 @@ impl TestCommon for Max {
         } else {
             Err(expected)
         }
-    }
-
-    fn ptx(&self) -> String {
-        let name = format!(
-            "max{}{}.f16",
-            if self.ftz { ".ftz" } else { "" },
-            if self.nan { ".NaN" } else { "" }
-        );
-        let mut src = PTX
-            .replace("<TYPE_SIZE>", "2")
-            .replace("<TYPE>", "f16")
-            .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
     }
 }
 

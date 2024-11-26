@@ -1,6 +1,5 @@
 use crate::common::{flush_to_zero_f32, Rounding};
-use crate::cuda::Cuda;
-use crate::test::{self, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use std::mem;
 
 pub static PTX: &str = include_str!("rcp.ptx");
@@ -26,7 +25,7 @@ fn rcp_approx(ftz: bool) -> TestCase {
 }
 
 fn rcp<const APPROX: bool>(rnd: Rounding, ftz: bool) -> TestCase {
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Rcp<APPROX>>(cuda, Rcp { rnd, ftz }));
+    let test = make_range::<Rcp<APPROX>>(Rcp { rnd, ftz });
     let mode = if APPROX { "approx" } else { rnd.as_str() };
     let ftz = if ftz { "_ftz" } else { "" };
     TestCase::new(format!("rcp_{}{}", mode, ftz), test)
@@ -37,18 +36,25 @@ pub struct Rcp<const APPROX: bool> {
     rnd: Rounding,
 }
 
+impl<const APPROX: bool> TestPtx for Rcp<APPROX> {
+    fn body(&self) -> String {
+        let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
+        let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
+        PTX.replace("<MODE>", &mode)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl<const APPROX: bool> TestCommon for Rcp<APPROX> {
     type Input = f32;
 
     type Output = f32;
-
-    fn ptx(&self) -> String {
-        let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
-        let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
-        let mut src = PTX.replace("<MODE>", &mode);
-        src.push('\0');
-        src
-    }
 
     fn host_verify(
         &self,

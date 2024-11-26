@@ -1,6 +1,5 @@
 use crate::common::{self, flush_to_zero_f32};
-use crate::cuda::Cuda;
-use crate::test::{self, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use core::f32;
 use std::mem;
 
@@ -15,7 +14,7 @@ pub fn all_tests() -> Vec<TestCase> {
 }
 
 fn cos(ftz: bool) -> TestCase {
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Cos>(cuda, Cos { ftz }));
+    let test = make_range(Cos { ftz });
     let ftz = if ftz { "_ftz" } else { "" };
     TestCase::new(format!("cos_approx{}", ftz), test)
 }
@@ -26,17 +25,24 @@ pub struct Cos {
 
 const APPROX_TOLERANCE: f64 = 0.00000051106141211332948885584179164092160363501768f64; // 2^-20.9
 
+impl TestPtx for Cos {
+    fn body(&self) -> String {
+        let ftz = if self.ftz { ".ftz" } else { "" };
+        PTX.replace("<FTZ>", &ftz)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl TestCommon for Cos {
     type Input = f32;
 
     type Output = f32;
-
-    fn ptx(&self) -> String {
-        let ftz = if self.ftz { ".ftz" } else { "" };
-        let mut src = PTX.replace("<FTZ>", &ftz);
-        src.push('\0');
-        src
-    }
 
     fn host_verify(
         &self,

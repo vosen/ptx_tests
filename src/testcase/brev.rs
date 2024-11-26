@@ -1,7 +1,4 @@
-use crate::{
-    cuda::Cuda,
-    test::{self, PtxScalar, TestCase, TestCommon},
-};
+use crate::test::{self, make_range, PtxScalar, TestCase, TestCommon, TestPtx};
 use num::PrimInt;
 use rand::{distributions::Standard, prelude::Distribution};
 use std::mem;
@@ -19,7 +16,7 @@ where
     Standard: Distribution<u32>,
 {
     let bits = mem::size_of::<u32>() * 8;
-    let test = Box::new(move |cuda: &Cuda| test::run_range::<Brev<u32>>(cuda, Brev::<u32>::new()));
+    let test = make_range(Brev::<u32>::new());
     TestCase::new(format!("brev_b{}", bits), test)
 }
 
@@ -35,19 +32,26 @@ impl<T: PtxScalar> Brev<T> {
     }
 }
 
+impl<T: PtxScalar> TestPtx for Brev<T> {
+    fn body(&self) -> String {
+        let bits = mem::size_of::<T>() * 8;
+        PTX
+            .replace("<TYPE>", format!("b{}", bits).as_str())
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl<T: PtxScalar + PrimInt> TestCommon for Brev<T> {
     type Input = T;
 
     type Output = T;
-
-    fn ptx(&self) -> String {
-        let bits = mem::size_of::<T>() * 8;
-        let mut src: String = PTX
-            .replace("<TYPE>", format!("b{}", bits).as_str())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
-    }
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         let expected = input.reverse_bits();

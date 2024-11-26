@@ -1,5 +1,4 @@
-use crate::cuda::Cuda;
-use crate::test::{self, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
+use crate::test::{make_random, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon, TestPtx};
 use num::cast::AsPrimitive;
 use num::PrimInt;
 use num::{traits::FromBytes, Zero};
@@ -22,7 +21,7 @@ fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default>() -> TestCase
 where
     Standard: Distribution<T>,
 {
-    let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfe<T>>(cuda));
+    let test = make_random::<Bfe<T>>();
     TestCase::new(format!("bfe_rng_{}", T::name()), test)
 }
 
@@ -31,18 +30,27 @@ pub struct Bfe<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
 
+impl<T: PtxScalar> TestPtx for Bfe<T> {
+    fn body(&self) -> String {
+        PTX
+            .replace("<TYPE>", T::name())
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "positions",
+            "lengths",
+            "output",
+        ]
+    }
+}
+
 impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
     type Input = (T, u32, u32);
 
     type Output = T;
-
-    fn ptx(&self) -> String {
-        let mut src = PTX
-            .replace("<TYPE>", T::name())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
-    }
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         fn bfe_host<T: PtxScalar + AsPrimitive<usize> + PrimInt>(
