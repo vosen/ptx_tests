@@ -20,7 +20,7 @@ pub trait RangeTest: TestCommon {
     }
 }
 
-pub trait RandomTest: TestCommon {
+pub trait RandomTest: TestCommon + Default {
     fn generate<R: Rng>(rng: &mut R) -> Self::Input;
 }
 
@@ -367,8 +367,8 @@ const GROUP_SIZE: usize = 128;
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
 pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
-    // TOOD: fix
-    let src = T::ptx(&unsafe { mem::zeroed::<T>() });
+    let t = T::default();
+    let src = T::ptx(&t);
     let mut module = ptr::null_mut();
     unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
     let mut kernel = ptr::null_mut();
@@ -448,8 +448,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         for (i, result) in result.iter().copied().enumerate() {
             let value = T::Input::read(&inputs, i);
             let result = result;
-            // TODO: fix
-            if let Err(expected) = T::host_verify(&unsafe { mem::zeroed() }, value, result) {
+            if let Err(expected) = t.host_verify(value, result) {
                 return Err(ResultMismatch {
                     input: format!("{:?}", value),
                     output: format!("{:?}", result),
