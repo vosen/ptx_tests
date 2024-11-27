@@ -39,7 +39,7 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
 
     type Output = T;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         PTX
             .replace("<TYPE>", T::name())
             .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())

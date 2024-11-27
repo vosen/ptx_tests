@@ -30,7 +30,7 @@ impl TestCommon for Cos {
 
     type Output = f32;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let ftz = if self.ftz { ".ftz" } else { "" };
         PTX.replace("<FTZ>", &ftz)
     }

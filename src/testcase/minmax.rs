@@ -59,7 +59,7 @@ impl TestCommon for Min {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let name = format!(
             "min{}{}.f16",
             if self.ftz { ".ftz" } else { "" },
@@ -116,7 +116,7 @@ impl TestCommon for Max {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let name = format!(
             "max{}{}.f16",
             if self.ftz { ".ftz" } else { "" },

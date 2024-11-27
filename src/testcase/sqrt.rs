@@ -44,7 +44,7 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
 
     type Output = f32;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
         let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
         PTX.replace("<MODE>", &mode)

@@ -154,7 +154,7 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
         )
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let src = include_str!("cvt.ptx");
         let ftz = if self.ftz { ".ftz" } else { "" };
         let sat = if self.sat { ".sat" } else { "" };

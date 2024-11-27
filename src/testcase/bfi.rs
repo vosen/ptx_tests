@@ -31,7 +31,7 @@ impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> TestCommon for Bfi<T> {
 
     type Output = T;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let bits = mem::size_of::<T>() * 8;
         PTX
             .replace("<TYPE>", format!("b{}", bits).as_str())

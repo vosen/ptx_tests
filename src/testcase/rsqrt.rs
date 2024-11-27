@@ -29,7 +29,7 @@ impl TestCommon for SqrtApprox {
 
     type Output = f32;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let mode = format!("approx{}", if self.ftz { ".ftz" } else { "" });
         PTX.replace("<MODE>", &mode)
     }

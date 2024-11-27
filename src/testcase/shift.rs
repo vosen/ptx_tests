@@ -37,7 +37,7 @@ impl TestCommon for Shl {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         PTX.replace("<OP>", "shl.b16")
     }
 
@@ -84,7 +84,7 @@ impl<T: PtxScalar + PrimInt> TestCommon for Shr<T> {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let op = if T::signed() { "shr.s16" } else { "shr.u16" };
         PTX.replace("<OP>", op)
     }

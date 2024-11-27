@@ -35,7 +35,7 @@ impl<T: PtxScalar + PrimInt> TestCommon for Brev<T> {
 
     type Output = T;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let bits = mem::size_of::<T>() * 8;
         PTX
             .replace("<TYPE>", format!("b{}", bits).as_str())
