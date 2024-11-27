@@ -162,7 +162,7 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
         let modifiers = format!("{}{}{}", rnd, ftz, sat);
         let input_bits = mem::size_of::<Self::Input>() * 8;
         let output_bits = mem::size_of::<Self::Output>() * 8;
-        let mut src = src
+        src
             .replace("<INPUT>", Self::Input::name())
             // PTX disallows ld.half::f16, but allows ld.b16 and implictly converts to half::f16
             .replace("<INPUT_LD>", &format!("b{input_bits}"))
@@ -170,9 +170,14 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
             .replace("<OUTPUT>", Self::Output::name())
             .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
             .replace("<OUTPUT_SIZE>", &mem::size_of::<Self::Output>().to_string())
-            .replace("<MODIFIERS>", &modifiers);
-        src.push('\0');
-        src
+            .replace("<MODIFIERS>", &modifiers)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
     }
 }
 

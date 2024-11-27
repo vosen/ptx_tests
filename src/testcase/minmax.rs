@@ -65,13 +65,27 @@ impl TestCommon for Min {
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        let mut src = PTX
+        PTX
             .replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
+            .replace("<OP>", &name)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
+
+    fn ptx_header(&self) -> &str {
+        return "
+            .version 7.0
+            .target sm_80
+            .address_size 64
+        ";
     }
 }
 
@@ -108,13 +122,19 @@ impl TestCommon for Max {
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        let mut src = PTX
+        PTX
             .replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
+            .replace("<OP>", &name)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 

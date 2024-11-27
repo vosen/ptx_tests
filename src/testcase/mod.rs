@@ -18,10 +18,24 @@ pub struct TestContext {
 }
 
 impl TestContext {
+    /// Turn argument names into PTX test function signature.
+    fn fmt_ptx_signature(args: &[&str]) -> String {
+        let args: Vec<_> = args.iter().map(|a| format!(".param .u64 {}", a)).collect();
+        format!(".entry run({})", args.join(", "))
+    }
+
     /// Prepare test sources to be loaded as a module on the device.
     pub fn prepare_test_source<T: TestCommon>(&self, t: &T) -> String {
         let body = t.ptx();
-        return body;
+        let args = t.ptx_args();
+        let header = t.ptx_header();
+
+        format!(
+            "{}\n{}\n{{\n{}\nret;\n}}\0",
+            header,
+            Self::fmt_ptx_signature(args),
+            body,
+        )
     }
 }
 

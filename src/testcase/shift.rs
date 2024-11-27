@@ -38,9 +38,15 @@ impl TestCommon for Shl {
     }
 
     fn ptx(&self) -> String {
-        let mut src = PTX.replace("<OP>", "shl.b16");
-        src.push('\0');
-        src
+        PTX.replace("<OP>", "shl.b16")
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 
@@ -80,9 +86,15 @@ impl<T: PtxScalar + PrimInt> TestCommon for Shr<T> {
 
     fn ptx(&self) -> String {
         let op = if T::signed() { "shr.s16" } else { "shr.u16" };
-        let mut src = PTX.replace("<OP>", op);
-        src.push('\0');
-        src
+        PTX.replace("<OP>", op)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 

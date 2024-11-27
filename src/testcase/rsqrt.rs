@@ -31,9 +31,14 @@ impl TestCommon for SqrtApprox {
 
     fn ptx(&self) -> String {
         let mode = format!("approx{}", if self.ftz { ".ftz" } else { "" });
-        let mut src = PTX.replace("<MODE>", &mode);
-        src.push('\0');
-        src
+        PTX.replace("<MODE>", &mode)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
     }
 
     fn host_verify(

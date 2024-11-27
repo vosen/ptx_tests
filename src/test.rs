@@ -12,6 +12,14 @@ pub trait TestCommon {
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
 
     fn ptx(&self) -> String;
+    fn ptx_args(&self) -> &[&str];
+    fn ptx_header(&self) -> &str {
+        return "
+            .version 6.5
+            .target sm_30
+            .address_size 64
+        ";
+    }
 }
 
 pub trait RangeTest: TestCommon {

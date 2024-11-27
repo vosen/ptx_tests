@@ -36,9 +36,14 @@ impl TestCommon for Lg2 {
 
     fn ptx(&self) -> String {
         let ftz = if self.ftz { ".ftz" } else { "" };
-        let mut src = PTX.replace("<FTZ>", &ftz);
-        src.push('\0');
-        src
+        PTX.replace("<FTZ>", &ftz)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
     }
 
     fn host_verify(

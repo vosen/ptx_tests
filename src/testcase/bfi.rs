@@ -33,11 +33,19 @@ impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> TestCommon for Bfi<T> {
 
     fn ptx(&self) -> String {
         let bits = mem::size_of::<T>() * 8;
-        let mut src = PTX
+        PTX
             .replace("<TYPE>", format!("b{}", bits).as_str())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "positions",
+            "lengths",
+            "output",
+        ]
     }
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
