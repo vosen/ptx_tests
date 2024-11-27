@@ -1,8 +1,3 @@
-.reg .u64 	    input_addr;
-.reg .u64 	    output_addr;
-ld.param.u64 	input_addr, [input];
-ld.param.u64 	output_addr, [output];
-
 .reg .u32       tid_x;
 .reg .u64       tid_x_64;
 .reg .u32       ntid_x;

@@ -56,5 +56,16 @@ impl Nvrtc {
             prog: nvrtcProgram,
             ptx: *mut ::core::ffi::c_char,
         ) -> nvrtcResult;
+        "system" fn nvrtcGetProgramLogSize(
+            prog: nvrtcProgram,
+            logSizeRet: *mut ::core::ffi::c_size_t,
+        ) -> nvrtcResult;
+        "system" fn nvrtcGetProgramLog(
+            prog: nvrtcProgram,
+            log: *mut ::core::ffi::c_char,
+        ) -> nvrtcResult;
+        "system" fn nvrtcGetErrorString(
+            result: nvrtcResult,
+        ) -> *const ::core::ffi::c_char;
     }
 }

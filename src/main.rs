@@ -6,10 +6,11 @@
 use std::ptr;
 
 use bpaf::Bpaf;
+use nvrtc::Nvrtc;
 use regex::{self, Regex};
 
 use cuda::Cuda;
-use test::TestError;
+use test::{TestCase, TestError};
 use testcase::*;
 
 mod common;
@@ -31,6 +32,10 @@ pub enum Arguments {
         #[bpaf(short, long)]
         filter: Option<String>,
 
+        /// path to NVRTC shared library, switches to testing inline PTX embedded in CUDA sources when provided
+        #[bpaf(long)]
+        nvrtc: Option<String>,
+
         /// path to CUDA shared library under testing, for example C:\Windows\System32\nvcuda.dll or /usr/lib/x86_64-linux-gnu/libcuda.so
         #[bpaf(positional("cuda"))]
         cuda: String,
@@ -39,50 +44,59 @@ pub enum Arguments {
 
 fn main() {
     let args = arguments().run();
-    std::process::exit(run(args));
-}
 
-fn run(args: Arguments) -> i32 {
-    let mut failures = 0;
     let mut tests = tests();
-    tests.sort_unstable_by_key(|t| t.name.clone());
+
     match args {
         Arguments::List { .. } => {
             for test in tests {
                 println!("{}", test.name);
             }
         }
-        Arguments::Run { filter, cuda } => {
+        Arguments::Run { filter, nvrtc, cuda } => {
             if let Some(filter) = filter {
                 let re = Regex::new(&filter).unwrap();
                 tests = tests.into_iter().filter(|t| re.is_match(&t.name)).collect();
             }
 
-            let ctx = TestFixture {
-                libs: (Cuda::new(cuda),),
+            let cuda = Cuda::new(cuda);
+            let nvrtc = nvrtc.map(Nvrtc::new);
+
+            let failures = if let Some(nvrtc) = nvrtc {
+                let libs = (cuda, nvrtc);
+                run(tests, TestFixture { libs })
+            } else {
+                let libs = (cuda,);
+                run(tests, TestFixture { libs })
             };
 
-            let cuda = ctx.cuda();
+            std::process::exit(failures);
+        }
+    }
+}
 
-            unsafe { cuda.cuInit(0) }.unwrap();
-            let mut cuda_ctx = ptr::null_mut();
-            unsafe { cuda.cuCtxCreate_v2(&mut cuda_ctx, 0, 0) }.unwrap();
+fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
+    let cuda = ctx.cuda();
 
-            for t in tests {
-                match (t.test)(&ctx) {
-                    Ok(()) => println!("{}: OK", t.name),
-                    Err(TestError::Mismatch(e)) => {
-                        println!(
-                            "{}: FAIL with input {}\n    computed on GPU: {}\n    computed on CPU: {}",
-                            t.name, e.input, e.output, e.expected
-                        );
-                        failures += 1;
-                    }
-                    Err(TestError::Miscompile(name)) => {
-                        println!("{}: FAIL: Compilation mismatch", name);
-                        failures += 1;
-                    }
-                }
+    let mut failures = 0;
+
+    unsafe { cuda.cuInit(0) }.unwrap();
+    let mut cuda_ctx = ptr::null_mut();
+    unsafe { cuda.cuCtxCreate_v2(&mut cuda_ctx, 0, 0) }.unwrap();
+
+    for t in tests {
+        match (t.test)(&ctx) {
+            Ok(()) => println!("{}: OK", t.name),
+            Err(TestError::Mismatch(e)) => {
+                println!(
+                    "{}: FAIL with input {}\n    computed on GPU: {}\n    computed on CPU: {}",
+                    t.name, e.input, e.output, e.expected
+                );
+                failures += 1;
+            }
+            Err(TestError::Miscompile(name)) => {
+                println!("{}: FAIL: Compilation mismatch", name);
+                failures += 1;
             }
         }
     }
@@ -92,7 +106,7 @@ fn run(args: Arguments) -> i32 {
 
 #[macro_export]
 macro_rules! impl_library {
-    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* $(,)* ) -> $ret_type:path);* $(;)*) => {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* $(,)* ) -> $ret_type:ty);* $(;)*) => {
         $(
             #[allow(non_snake_case)]
             #[allow(improper_ctypes)]
