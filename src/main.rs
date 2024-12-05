@@ -88,8 +88,7 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
         match (t.test)(&ctx) {
             Ok(()) => println!("{}: OK", t.name),
             Err(TestError::Mismatch(e)) => {
-                println!(
-                    "{}: FAIL: Input {}, computed on GPU {}, computed on CPU {}",
+                println!("{}: FAIL with input {}\n    computed on GPU: {}\n    computed on CPU: {}",
                     t.name, e.input, e.output, e.expected
                 );
                 failures += 1;

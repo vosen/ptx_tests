@@ -8,7 +8,7 @@ use crate::TestContext;
 
 pub trait TestCommon {
     type Input: OnDevice;
-    type Output: OnDevice;
+    type Output: OnDevice + DebugRich;
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
 
     fn ptx_header(&self) -> &str {
@@ -292,8 +292,45 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, 
     }
 }
 
-pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice + Any {
+pub trait DebugRich {
+    fn debug_rich(&self) -> String;
+}
+
+macro_rules! impl_debug_rich {
+    ($type:ident) => {
+        impl DebugRich for $type {
+            fn debug_rich(&self) -> String {
+                format!("{self:#066b} {self:#X} {self}")
+            }
+        }
+    }
+}
+
+impl_debug_rich!(u16);
+impl_debug_rich!(i16);
+impl_debug_rich!(u32);
+impl_debug_rich!(i32);
+impl_debug_rich!(u64);
+impl_debug_rich!(i64);
+impl_debug_rich!(f16);
+
+impl DebugRich for f32 {
+    fn debug_rich(&self) -> String {
+        let f: &u32 = unsafe { mem::transmute(self) };
+        format!("{f:#b} {f:#X} {f}")
+    }
+}
+
+impl DebugRich for f64 {
+    fn debug_rich(&self) -> String {
+        let f: &u64 = unsafe { mem::transmute(self) };
+        format!("{f:#b} {f:#X} {f}")
+    }
+}
+
+pub trait PtxScalar: Copy + Num + Bounded + Debug + DebugRich + OnDevice+ Any {
     fn name() -> &'static str;
+
     fn unsigned() -> bool {
         Self::min_value() == <Self as Zero>::zero()
     }
@@ -463,8 +500,8 @@ pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<bool, ResultMi
             if let Err(expected) = t.host_verify(value, result) {
                 return Err(ResultMismatch {
                     input: format!("{:?}", value),
-                    output: format!("{:?}", result),
-                    expected: format!("{:?}", expected),
+                    output: result.debug_rich(),
+                    expected: expected.debug_rich(),
                 });
             }
         }
