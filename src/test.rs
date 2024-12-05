@@ -6,8 +6,9 @@ use rand_xorshift::XorShiftRng;
 use std::{any::Any, fmt::Debug, mem, ptr, u32};
 
 pub trait TestCommon {
-    type Input: OnDevice;
-    type Output: OnDevice;
+    type Input: OnDevice + DebugRich;
+    type Output: OnDevice + DebugRich;
+
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
     fn ptx(&self) -> String;
 }
@@ -282,8 +283,104 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, 
     }
 }
 
-pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice + Any {
+pub trait DebugRich {
+    fn debug_rich(&self) -> String;
+}
+
+macro_rules! impl_debug_rich {
+    ($type:ident) => {
+        impl DebugRich for $type {
+            fn debug_rich(&self) -> String {
+                format!("{self:#066b} {self:#X} {self}")
+            }
+        }
+    }
+}
+
+impl_debug_rich!(u16);
+impl_debug_rich!(i16);
+impl_debug_rich!(u32);
+impl_debug_rich!(i32);
+impl_debug_rich!(u64);
+impl_debug_rich!(i64);
+
+impl DebugRich for f16 {
+    fn debug_rich(&self) -> String {
+        format!("{self:#066b} {self:#X} {self:.24}")
+    }
+}
+
+impl DebugRich for f32 {
+    fn debug_rich(&self) -> String {
+        let bits = self.to_bits();
+        format!("{bits:#066b} {bits:#X} {self:.24}")
+    }
+}
+
+impl DebugRich for f64 {
+    fn debug_rich(&self) -> String {
+        let bits = self.to_bits();
+        format!("{bits:#066b} {bits:#X} {self:.24}")
+    }
+}
+
+impl<T: DebugRich> DebugRich for (T,) {
+    fn debug_rich(&self) -> String {
+        self.0.debug_rich()
+    }
+}
+
+impl<T1, T2> DebugRich for (T1, T2)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+        )
+    }
+}
+
+impl<T1, T2, T3> DebugRich for (T1, T2, T3)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+    T3: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+            self.2.debug_rich(),
+        )
+    }
+}
+
+impl<T1, T2, T3, T4> DebugRich for (T1, T2, T3, T4)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+    T3: DebugRich,
+    T4: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+            self.2.debug_rich(),
+            self.3.debug_rich(),
+        )
+    }
+}
+
+pub trait PtxScalar: Copy + Num + Bounded + Debug + DebugRich + OnDevice + Any {
     fn name() -> &'static str;
+
     fn unsigned() -> bool {
         Self::min_value() == <Self as Zero>::zero()
     }
@@ -386,7 +483,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
-    let mut result = vec![T::Output::zero(); memory_batch_size / element_size];
+    let mut outputs = vec![T::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
         assert_eq!(T::Output::COMPONENTS, 1);
         let memory_batch_size = if iteration == iterations - 1 {
@@ -401,7 +498,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         for _ in 0..element_batch_size {
             T::generate(&mut rng).write(&mut inputs);
         }
-        result.resize(element_batch_size, T::Output::zero());
+        outputs.resize(element_batch_size, T::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -439,20 +536,19 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
         unsafe {
             cuda.cuMemcpyDtoH_v2(
-                result.as_mut_ptr() as _,
+                outputs.as_mut_ptr() as _,
                 dev_output,
-                result.len() * T::Output::size_of(),
+                outputs.len() * T::Output::size_of(),
             )
         }
         .unwrap();
-        for (i, result) in result.iter().copied().enumerate() {
-            let value = T::Input::read(&inputs, i);
-            let result = result;
-            if let Err(expected) = t.host_verify(value, result) {
+        for (i, output) in outputs.iter().copied().enumerate() {
+            let input = T::Input::read(&inputs, i);
+            if let Err(expected) = t.host_verify(input, output) {
                 return Err(ResultMismatch {
-                    input: format!("{:?}", value),
-                    output: format!("{:?}", result),
-                    expected: format!("{:?}", expected),
+                    input: input.debug_rich(),
+                    output: output.debug_rich(),
+                    expected: expected.debug_rich(),
                 });
             }
         }
@@ -498,7 +594,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
-    let mut result = vec![Test::Output::zero(); memory_batch_size / element_size];
+    let mut outputs = vec![Test::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
         assert_eq!(Test::Output::COMPONENTS, 1);
         let elment_start = iteration * memory_batch_size / element_size;
@@ -515,7 +611,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
             let input = t.generate((elment_start + i) as u32);
             input.write(&mut inputs);
         }
-        result.resize(element_batch_size, Test::Output::zero());
+        outputs.resize(element_batch_size, Test::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -558,20 +654,19 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
         unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
         unsafe {
             cuda.cuMemcpyDtoH_v2(
-                result.as_mut_ptr() as _,
+                outputs.as_mut_ptr() as _,
                 dev_output,
-                result.len() * Test::Output::size_of(),
+                outputs.len() * Test::Output::size_of(),
             )
         }
         .unwrap();
-        for (i, result) in result.iter().copied().enumerate() {
-            let value = Test::Input::read(&inputs, i);
-            let result = result;
-            if let Err(expected) = t.host_verify(value, result) {
+        for (i, output) in outputs.iter().copied().enumerate() {
+            let input = Test::Input::read(&inputs, i);
+            if let Err(expected) = t.host_verify(input, output) {
                 return Err(ResultMismatch {
-                    input: format!("{:.24?}", value),
-                    output: format!("{:.24?}", result),
-                    expected: format!("{:.24?}", expected),
+                    input: input.debug_rich(),
+                    output: output.debug_rich(),
+                    expected: expected.debug_rich(),
                 });
             }
         }

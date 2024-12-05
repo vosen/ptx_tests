@@ -94,7 +94,7 @@ fn run(args: Arguments) -> i32 {
                     Ok(()) => println!("{}: OK", t.name),
                     Err(TestError::Mismatch(e)) => {
                         println!(
-                            "{}: FAIL: Input {}, computed on GPU {}, computed on CPU {}",
+                            "{}: FAIL with input {}\n    computed on GPU: {}\n    computed on CPU: {}",
                             t.name, e.input, e.output, e.expected
                         );
                         failures += 1;
@@ -107,5 +107,6 @@ fn run(args: Arguments) -> i32 {
             }
         }
     }
+
     failures
 }
