@@ -1,4 +1,4 @@
-use crate::test::{self, PtxScalar, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, PtxScalar, RangeTest, TestCase, TestCommon};
 use num::PrimInt;
 use std::mem;
 
@@ -8,29 +8,15 @@ pub(crate) fn all_tests() -> Vec<TestCase> {
     vec![
         TestCase::new(
             "shl_b16".to_string(),
-            Box::new(|cuda| test::run_range::<Shl>(cuda, Shl {})),
+            make_range(Shl {}),
         ),
         TestCase::new(
             "shr_u16".to_string(),
-            Box::new(|cuda| {
-                test::run_range::<Shr<u16>>(
-                    cuda,
-                    Shr {
-                        _phantom: std::marker::PhantomData,
-                    },
-                )
-            }),
+            make_range::<Shr<u16>>(Shr { _phantom: std::marker::PhantomData }),
         ),
         TestCase::new(
             "shr_s16".to_string(),
-            Box::new(|cuda| {
-                test::run_range::<Shr<i16>>(
-                    cuda,
-                    Shr {
-                        _phantom: std::marker::PhantomData,
-                    },
-                )
-            }),
+            make_range::<Shr<i16>>(Shr { _phantom: std::marker::PhantomData }),
         ),
     ]
 }
@@ -51,10 +37,16 @@ impl TestCommon for Shl {
         }
     }
 
-    fn ptx(&self) -> String {
-        let mut src = PTX.replace("<OP>", "shl.b16");
-        src.push('\0');
-        src
+    fn ptx_body(&self) -> String {
+        PTX.replace("<OP>", "shl.b16")
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 
@@ -92,11 +84,17 @@ impl<T: PtxScalar + PrimInt> TestCommon for Shr<T> {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let op = if T::signed() { "shr.s16" } else { "shr.u16" };
-        let mut src = PTX.replace("<OP>", op);
-        src.push('\0');
-        src
+        PTX.replace("<OP>", op)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 

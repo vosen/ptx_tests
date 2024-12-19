@@ -1,7 +1,4 @@
-use crate::{
-    common,
-    test::{self, RangeTest, TestCase, TestCommon},
-};
+use crate::{common, test::{make_range, RangeTest, TestCase, TestCommon}};
 use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
@@ -25,7 +22,7 @@ fn min(ftz: bool, nan: bool) -> TestCase {
     );
     TestCase::new(
         name.to_string(),
-        Box::new(move |cuda| test::run_range::<Min>(cuda, Min { ftz, nan })),
+        make_range(Min { ftz, nan }),
     )
 }
 
@@ -37,7 +34,7 @@ fn max(ftz: bool, nan: bool) -> TestCase {
     );
     TestCase::new(
         name.to_string(),
-        Box::new(move |cuda| test::run_range::<Max>(cuda, Max { ftz, nan })),
+        make_range(Max { ftz, nan }),
     )
 }
 
@@ -62,19 +59,33 @@ impl TestCommon for Min {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let name = format!(
             "min{}{}.f16",
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        let mut src = PTX
+        PTX
             .replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
+            .replace("<OP>", &name)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
+
+    fn ptx_header(&self) -> &str {
+        return "
+            .version 7.0
+            .target sm_80
+            .address_size 64
+        ";
     }
 }
 
@@ -105,19 +116,25 @@ impl TestCommon for Max {
         }
     }
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let name = format!(
             "max{}{}.f16",
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        let mut src = PTX
+        PTX
             .replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name);
-        src.push('\0');
-        src
+            .replace("<OP>", &name)
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
     }
 }
 

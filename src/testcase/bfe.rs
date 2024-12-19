@@ -1,5 +1,4 @@
-use crate::cuda::Cuda;
-use crate::test::{self, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
+use crate::test::{make_random, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
 use num::cast::AsPrimitive;
 use num::PrimInt;
 use num::{traits::FromBytes, Zero};
@@ -9,27 +8,28 @@ use std::mem;
 
 pub static PTX: &str = include_str!("bfe.ptx");
 
-pub(super) fn rng_u32() -> TestCase {
+pub fn rng_u32() -> TestCase {
     bfe_rng::<u32>()
 }
-pub(super) fn rng_s32() -> TestCase {
+pub fn rng_s32() -> TestCase {
     bfe_rng::<i32>()
 }
-pub(super) fn rng_u64() -> TestCase {
+pub fn rng_u64() -> TestCase {
     bfe_rng::<u64>()
 }
-pub(super) fn rng_s64() -> TestCase {
+pub fn rng_s64() -> TestCase {
     bfe_rng::<i64>()
 }
 
-fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt>() -> TestCase
+fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default>() -> TestCase
 where
     Standard: Distribution<T>,
 {
-    let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfe<T>>(cuda));
+    let test = make_random::<Bfe<T>>();
     TestCase::new(format!("bfe_rng_{}", T::name()), test)
 }
 
+#[derive(Default)]
 pub struct Bfe<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
@@ -39,12 +39,19 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
 
     type Output = T;
 
-    fn ptx(&self) -> String {
-        let mut src = PTX
+    fn ptx_body(&self) -> String {
+        PTX
             .replace("<TYPE>", T::name())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input",
+            "positions",
+            "lengths",
+            "output",
+        ]
     }
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
@@ -114,7 +121,7 @@ where
     }
 }
 
-impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> RandomTest for Bfe<T>
+impl<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default> RandomTest for Bfe<T>
 where
     Standard: Distribution<T>,
 {

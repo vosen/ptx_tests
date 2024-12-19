@@ -1,29 +1,27 @@
-use crate::{
-    cuda::Cuda,
-    test::{self, PtxScalar, RandomTest, TestCase, TestCommon},
-};
+use crate::test::{make_random, PtxScalar, RandomTest, TestCase, TestCommon};
 use num::{cast::AsPrimitive, PrimInt};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 use std::mem;
 
 pub static PTX: &str = include_str!("bfi.ptx");
 
-pub(super) fn rng_b32() -> TestCase {
+pub fn rng_b32() -> TestCase {
     bfi_rng::<u32>()
 }
-pub(super) fn rng_b64() -> TestCase {
+pub fn rng_b64() -> TestCase {
     bfi_rng::<u64>()
 }
 
-fn bfi_rng<T: PtxScalar + PrimInt + AsPrimitive<usize>>() -> TestCase
+fn bfi_rng<T: PtxScalar + PrimInt + AsPrimitive<usize> + Default>() -> TestCase
 where
     Standard: Distribution<T>,
 {
     let bits = mem::size_of::<T>() * 8;
-    let test = Box::new(move |cuda: &Cuda| test::run_random::<Bfi<T>>(cuda));
+    let test = make_random::<Bfi<T>>();
     TestCase::new(format!("bfi_rng_b{}", bits), test)
 }
 
+#[derive(Default)]
 pub struct Bfi<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
@@ -33,13 +31,21 @@ impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> TestCommon for Bfi<T> {
 
     type Output = T;
 
-    fn ptx(&self) -> String {
+    fn ptx_body(&self) -> String {
         let bits = mem::size_of::<T>() * 8;
-        let mut src = PTX
+        PTX
             .replace("<TYPE>", format!("b{}", bits).as_str())
-            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string());
-        src.push('\0');
-        src
+            .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
+    }
+
+    fn ptx_args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "positions",
+            "lengths",
+            "output",
+        ]
     }
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
@@ -81,7 +87,7 @@ impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> TestCommon for Bfi<T> {
     }
 }
 
-impl<T: PtxScalar + PrimInt + AsPrimitive<usize>> RandomTest for Bfi<T>
+impl<T: PtxScalar + PrimInt + AsPrimitive<usize> + Default> RandomTest for Bfi<T>
 where
     Standard: Distribution<T>,
 {
