@@ -123,6 +123,14 @@ impl TestPtx for Max {
             "output",
         ]
     }
+
+    fn header(&self) -> &str {
+        return "
+            .version 7.0
+            .target sm_80
+            .address_size 64
+        ";
+    }
 }
 
 impl TestCommon for Max {
