@@ -1,4 +1,4 @@
-use crate::test::{self, make_range, PtxScalar, TestCase, TestCommon};
+use crate::test::{self, make_range, PtxScalar, TestCase, TestCommon, TestPtx};
 use num::PrimInt;
 use rand::{distributions::Standard, prelude::Distribution};
 use std::mem;
@@ -30,24 +30,26 @@ impl<T: PtxScalar> Brev<T> {
     }
 }
 
-impl<T: PtxScalar + PrimInt> TestCommon for Brev<T> {
-    type Input = T;
-
-    type Output = T;
-
-    fn ptx_body(&self) -> String {
+impl<T: PtxScalar> TestPtx for Brev<T> {
+    fn body(&self) -> String {
         let bits = mem::size_of::<T>() * 8;
         PTX
             .replace("<TYPE>", format!("b{}", bits).as_str())
             .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
     }
 
-    fn ptx_args(&self) -> &[&str] {
+    fn args(&self) -> &[&str] {
         &[
             "input",
             "output",
         ]
     }
+}
+
+impl<T: PtxScalar + PrimInt> TestCommon for Brev<T> {
+    type Input = T;
+
+    type Output = T;
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         let expected = input.reverse_bits();

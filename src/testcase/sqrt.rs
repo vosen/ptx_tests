@@ -1,5 +1,5 @@
 use crate::common::{self, flush_to_zero_f32, Rounding};
-use crate::test::{make_range, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use std::mem;
 
 pub static PTX: &str = include_str!("sqrt.ptx");
@@ -39,23 +39,25 @@ pub struct Sqrt<const APPROX: bool> {
 
 const APPROX_TOLERANCE: f64 = 0.00000011920928955078125f64; // 2^-23
 
-impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
-    type Input = f32;
-
-    type Output = f32;
-
-    fn ptx_body(&self) -> String {
+impl<const APPROX: bool> TestPtx for Sqrt<APPROX> {
+    fn body(&self) -> String {
         let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
         let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
         PTX.replace("<MODE>", &mode)
     }
 
-    fn ptx_args(&self) -> &[&str] {
+    fn args(&self) -> &[&str] {
         &[
             "input",
             "output",
         ]
     }
+}
+
+impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
+    type Input = f32;
+
+    type Output = f32;
 
     fn host_verify(
         &self,

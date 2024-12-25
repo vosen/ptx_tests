@@ -1,4 +1,4 @@
-use crate::{common, test::{make_range, RangeTest, TestCase, TestCommon}};
+use crate::{common, test::{make_range, RangeTest, TestCase, TestCommon, TestPtx}};
 use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
@@ -43,6 +43,37 @@ struct Min {
     nan: bool,
 }
 
+impl TestPtx for Min {
+    fn body(&self) -> String {
+        let name = format!(
+            "min{}{}.f16",
+            if self.ftz { ".ftz" } else { "" },
+            if self.nan { ".NaN" } else { "" }
+        );
+        PTX
+            .replace("<TYPE_SIZE>", "2")
+            .replace("<TYPE>", "f16")
+            .replace("<BTYPE>", "b16")
+            .replace("<OP>", &name)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
+
+    fn header(&self) -> &str {
+        return "
+            .version 7.0
+            .target sm_80
+            .address_size 64
+        ";
+    }
+}
+
 impl TestCommon for Min {
     type Input = (half::f16, half::f16);
     type Output = half::f16;
@@ -58,35 +89,6 @@ impl TestCommon for Min {
             Err(expected)
         }
     }
-
-    fn ptx_body(&self) -> String {
-        let name = format!(
-            "min{}{}.f16",
-            if self.ftz { ".ftz" } else { "" },
-            if self.nan { ".NaN" } else { "" }
-        );
-        PTX
-            .replace("<TYPE_SIZE>", "2")
-            .replace("<TYPE>", "f16")
-            .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name)
-    }
-
-    fn ptx_args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
-    }
-
-    fn ptx_header(&self) -> &str {
-        return "
-            .version 7.0
-            .target sm_80
-            .address_size 64
-        ";
-    }
 }
 
 impl RangeTest for Min {
@@ -98,6 +100,29 @@ impl RangeTest for Min {
 struct Max {
     ftz: bool,
     nan: bool,
+}
+
+impl TestPtx for Max {
+    fn body(&self) -> String {
+        let name = format!(
+            "max{}{}.f16",
+            if self.ftz { ".ftz" } else { "" },
+            if self.nan { ".NaN" } else { "" }
+        );
+        PTX
+            .replace("<TYPE_SIZE>", "2")
+            .replace("<TYPE>", "f16")
+            .replace("<BTYPE>", "b16")
+            .replace("<OP>", &name)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
 }
 
 impl TestCommon for Max {
@@ -114,27 +139,6 @@ impl TestCommon for Max {
         } else {
             Err(expected)
         }
-    }
-
-    fn ptx_body(&self) -> String {
-        let name = format!(
-            "max{}{}.f16",
-            if self.ftz { ".ftz" } else { "" },
-            if self.nan { ".NaN" } else { "" }
-        );
-        PTX
-            .replace("<TYPE_SIZE>", "2")
-            .replace("<TYPE>", "f16")
-            .replace("<BTYPE>", "b16")
-            .replace("<OP>", &name)
-    }
-
-    fn ptx_args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
     }
 }
 

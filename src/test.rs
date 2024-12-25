@@ -6,20 +6,23 @@ use std::{any::Any, fmt::Debug, mem, ptr, u32};
 
 use crate::TestContext;
 
-pub trait TestCommon {
-    type Input: OnDevice;
-    type Output: OnDevice + DebugRich;
-    fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
-
-    fn ptx_header(&self) -> &str {
+pub trait TestPtx {
+    fn header(&self) -> &str {
         return "
             .version 6.5
             .target sm_30
             .address_size 64
         ";
     }
-    fn ptx_args(&self) -> &[&str];
-    fn ptx_body(&self) -> String;
+    fn args(&self) -> &[&str];
+    fn body(&self) -> String;
+}
+
+pub trait TestCommon: TestPtx {
+    type Input: OnDevice;
+    type Output: OnDevice + DebugRich;
+
+    fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
 }
 
 pub trait RangeTest: TestCommon {
@@ -416,7 +419,7 @@ const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<bool, ResultMismatch> {
     let cuda = ctx.cuda();
     let t =  T::default();
-    let src = ctx.prepare_test_source(t.ptx_header(), t.ptx_args(), &t.ptx_body());
+    let src = ctx.prepare_test_source(&t);
 
     let mut module = ptr::null_mut();
     unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
@@ -520,7 +523,7 @@ fn next_multiple_of(value: usize, multiple: usize) -> usize {
 
 pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<bool, ResultMismatch> {
     let cuda = ctx.cuda();
-    let src = ctx.prepare_test_source(t.ptx_header(), t.ptx_args(), &t.ptx_body());
+    let src = ctx.prepare_test_source(&t);
 
     let mut module = ptr::null_mut();
     let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };

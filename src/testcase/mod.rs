@@ -1,6 +1,6 @@
 use std::{alloc::{alloc, Layout}, ffi::CStr, ptr};
 
-use crate::{cuda::Cuda, nvrtc::Nvrtc, test::TestCase};
+use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
 
 mod bfe;
 mod bfi;
@@ -17,13 +17,7 @@ mod sqrt;
 
 pub trait TestContext {
     fn cuda(&self) -> &Cuda;
-
-    // Note:
-    // - this can't take <T: TestCase> as that would make TestContext non-dyn-compatible.
-    // - this can't take &dyn TestCommon as Input & Output types for TestCommon would need to be specified which would
-    //   lead to the same issue
-    // TODO: consider alternatives to passing many arguments like this
-    fn prepare_test_source(&self, ptx_header: &str, ptx_args: &[&str], ptx_body: &str) -> String;
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String;
 }
 
 pub struct TestFixture<L> {
@@ -35,7 +29,7 @@ impl TestContext for TestFixture<(Cuda,)> {
         &self.libs.0
     }
 
-    fn prepare_test_source(&self, ptx_header: &str, ptx_args: &[&str], ptx_body: &str) -> String {
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String {
         /// Generate PTX test function signature.
         fn fmt_ptx_signature(args: &[&str]) -> String {
             let args: Vec<_> = args.iter().map(|a| format!(".param .u64 {}", a)).collect();
@@ -54,10 +48,10 @@ impl TestContext for TestFixture<(Cuda,)> {
 
         format!(
             "{}\n{}\n{{\n{}\n{}\nret;\n}}\0",
-            ptx_header,
-            fmt_ptx_signature(ptx_args),
-            fmt_ptx_params_load(ptx_args),
-            ptx_body,
+            ptx.header(),
+            fmt_ptx_signature(ptx.args()),
+            fmt_ptx_params_load(ptx.args()),
+            ptx.body(),
         )
     }
 }
@@ -67,7 +61,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         &self.libs.0
     }
 
-    fn prepare_test_source(&self, _ptx_header: &str, ptx_args: &[&str], ptx_body: &str) -> String {
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String {
         /// Generate CUDA test function signature.
         fn fmt_cuda_signature(args: &[&str]) -> String {
             let args: Vec<_> = args.iter().map(|a| format!("uint64_t * {}", a)).collect();
@@ -115,8 +109,8 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
 
         let source_cuda = format!(
             "{} {{\n{}\n}}\0",
-            fmt_cuda_signature(ptx_args),
-            ptx_to_inline(ptx_args, &ptx_body),
+            fmt_cuda_signature(ptx.args()),
+            ptx_to_inline(ptx.args(), &ptx.body()),
         );
 
         let mut program = ptr::null_mut();

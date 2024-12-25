@@ -1,4 +1,4 @@
-use crate::test::{make_range, PtxScalar, RangeTest, TestCase, TestCommon};
+use crate::test::{make_range, PtxScalar, RangeTest, TestCase, TestCommon, TestPtx};
 use num::PrimInt;
 use std::mem;
 
@@ -23,6 +23,20 @@ pub(crate) fn all_tests() -> Vec<TestCase> {
 
 struct Shl {}
 
+impl TestPtx for Shl {
+    fn body(&self) -> String {
+        PTX.replace("<OP>", "shl.b16")
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
+}
+
 impl TestCommon for Shl {
     type Input = (u16, u16);
     type Output = u16;
@@ -36,18 +50,6 @@ impl TestCommon for Shl {
             Err(expected)
         }
     }
-
-    fn ptx_body(&self) -> String {
-        PTX.replace("<OP>", "shl.b16")
-    }
-
-    fn ptx_args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
-    }
 }
 
 impl RangeTest for Shl {
@@ -58,6 +60,21 @@ impl RangeTest for Shl {
 
 struct Shr<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: PtxScalar> TestPtx for Shr<T> {
+    fn body(&self) -> String {
+        let op = if T::signed() { "shr.s16" } else { "shr.u16" };
+        PTX.replace("<OP>", op)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input_a",
+            "input_b",
+            "output",
+        ]
+    }
 }
 
 impl<T: PtxScalar + PrimInt> TestCommon for Shr<T> {
@@ -82,19 +99,6 @@ impl<T: PtxScalar + PrimInt> TestCommon for Shr<T> {
         } else {
             Err(expected)
         }
-    }
-
-    fn ptx_body(&self) -> String {
-        let op = if T::signed() { "shr.s16" } else { "shr.u16" };
-        PTX.replace("<OP>", op)
-    }
-
-    fn ptx_args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
     }
 }
 

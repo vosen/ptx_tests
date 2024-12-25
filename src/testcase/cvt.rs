@@ -1,5 +1,5 @@
 use crate::common::{llvm_get_rounding, llvm_set_rounding};
-use crate::test::{make_range, TestFunction};
+use crate::test::{make_range, TestFunction, TestPtx};
 use crate::{
     common::Rounding,
     test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
@@ -143,6 +143,34 @@ impl<To: PtxScalar, From: PtxScalar> Cvt<To, From> {
     }
 }
 
+impl<To: PtxScalar, From: PtxScalar> TestPtx for Cvt<To, From> {
+    fn body(&self) -> String {
+        let src = include_str!("cvt.ptx");
+        let ftz = if self.ftz { ".ftz" } else { "" };
+        let sat = if self.sat { ".sat" } else { "" };
+        let rnd = self.rnd.as_ptx();
+        let modifiers = format!("{}{}{}", rnd, ftz, sat);
+        let input_bits = mem::size_of::<From>() * 8;
+        let output_bits = mem::size_of::<From>() * 8;
+        src
+            .replace("<INPUT>", From::name())
+            // PTX disallows ld.half::f16, but allows ld.b16 and implictly converts to half::f16
+            .replace("<INPUT_LD>", &format!("b{input_bits}"))
+            .replace("<INPUT_SIZE>", &mem::size_of::<From>().to_string())
+            .replace("<OUTPUT>", To::name())
+            .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
+            .replace("<OUTPUT_SIZE>", &mem::size_of::<To>().to_string())
+            .replace("<MODIFIERS>", &modifiers)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, From> {
     type Input = From;
 
@@ -152,32 +180,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
         <Self::Input as HostConvert<Self::Output>>::convert(
             input, self.rnd, self.ftz, self.sat, output,
         )
-    }
-
-    fn ptx_body(&self) -> String {
-        let src = include_str!("cvt.ptx");
-        let ftz = if self.ftz { ".ftz" } else { "" };
-        let sat = if self.sat { ".sat" } else { "" };
-        let rnd = self.rnd.as_ptx();
-        let modifiers = format!("{}{}{}", rnd, ftz, sat);
-        let input_bits = mem::size_of::<Self::Input>() * 8;
-        let output_bits = mem::size_of::<Self::Output>() * 8;
-        src
-            .replace("<INPUT>", Self::Input::name())
-            // PTX disallows ld.half::f16, but allows ld.b16 and implictly converts to half::f16
-            .replace("<INPUT_LD>", &format!("b{input_bits}"))
-            .replace("<INPUT_SIZE>", &mem::size_of::<Self::Input>().to_string())
-            .replace("<OUTPUT>", Self::Output::name())
-            .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
-            .replace("<OUTPUT_SIZE>", &mem::size_of::<Self::Output>().to_string())
-            .replace("<MODIFIERS>", &modifiers)
-    }
-
-    fn ptx_args(&self) -> &[&str] {
-        &[
-            "input",
-            "output",
-        ]
     }
 }
 

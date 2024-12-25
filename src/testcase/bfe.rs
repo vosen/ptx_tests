@@ -1,4 +1,4 @@
-use crate::test::{make_random, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon};
+use crate::test::{make_random, PtxScalar, RandomTest, RangeTest, TestCase, TestCommon, TestPtx};
 use num::cast::AsPrimitive;
 use num::PrimInt;
 use num::{traits::FromBytes, Zero};
@@ -34,18 +34,14 @@ pub struct Bfe<T: PtxScalar> {
     _phantom: std::marker::PhantomData<T>,
 }
 
-impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
-    type Input = (T, u32, u32);
-
-    type Output = T;
-
-    fn ptx_body(&self) -> String {
+impl<T: PtxScalar> TestPtx for Bfe<T> {
+    fn body(&self) -> String {
         PTX
             .replace("<TYPE>", T::name())
             .replace("<TYPE_SIZE>", &mem::size_of::<T>().to_string())
     }
 
-    fn ptx_args(&self) -> &[&str] {
+    fn args(&self) -> &[&str] {
         &[
             "input",
             "positions",
@@ -53,6 +49,12 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
             "output",
         ]
     }
+}
+
+impl<T: PtxScalar + AsPrimitive<usize> + PrimInt> TestCommon for Bfe<T> {
+    type Input = (T, u32, u32);
+
+    type Output = T;
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         fn bfe_host<T: PtxScalar + AsPrimitive<usize> + PrimInt>(
