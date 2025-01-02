@@ -105,7 +105,7 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
 
 #[macro_export]
 macro_rules! impl_library {
-    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* $(,)* ) -> $ret_type:path);* $(;)*) => {
+    ($($abi:literal fn $fn_name:ident( $($arg_id:ident : $arg_type:ty),* $(,)* ) -> $ret_type:ty);* $(;)*) => {
         $(
             #[allow(non_snake_case)]
             #[allow(improper_ctypes)]

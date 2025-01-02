@@ -1,4 +1,4 @@
-use std::{alloc::{alloc, Layout}, ffi::CStr, ptr};
+use std::{alloc::{alloc, dealloc, Layout}, ffi::CStr, ptr};
 
 use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
 
@@ -114,14 +114,38 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         );
 
         let mut program = ptr::null_mut();
-        unsafe { nvrtc.nvrtcCreateProgram(&mut program, source_cuda.as_ptr() as _, ptr::null(), 0, ptr::null(), ptr::null()) }.unwrap();
-        unsafe { nvrtc.nvrtcCompileProgram(program, 0, ptr::null()) }.unwrap();
+        unsafe { nvrtc.nvrtcCreateProgram(&mut program, source_cuda.as_ptr() as _, ptr::null() as _, 0, ptr::null(), ptr::null()) }.unwrap();
+        let result = unsafe { nvrtc.nvrtcCompileProgram(program, 0, ptr::null()) };
+
+        if result.is_err() {
+            let error = unsafe { CStr::from_ptr(nvrtc.nvrtcGetErrorString(result)) };
+            let error = String::from_utf8_lossy(error.to_bytes()).to_string();
+
+            eprintln!("NVRTC error: {error}");
+
+            let mut log_size = 0;
+            unsafe { nvrtc.nvrtcGetProgramLogSize(program, &mut log_size) }.unwrap();
+
+            let log_layout = Layout::array::<core::ffi::c_char>(log_size).unwrap();
+            let log_buffer = unsafe { alloc(log_layout) };
+
+            unsafe { nvrtc.nvrtcGetProgramLog(program, log_buffer as _) }.unwrap();
+
+            let log_cstr = unsafe { CStr::from_ptr(log_buffer as _) };
+            let log = String::from_utf8_lossy(log_cstr.to_bytes()).to_string();
+
+            eprintln!("Compilation produced the following log:\n{log}");
+
+            unsafe { dealloc(log_buffer, log_layout) };
+
+            std::process::exit(1);
+        }
 
         let mut ptx_size = 0;
         unsafe { nvrtc.nvrtcGetPTXSize(program, &mut ptx_size) }.unwrap();
 
-        let layout = Layout::array::<core::ffi::c_char>(ptx_size).unwrap();
-        let source_ptx_buffer = unsafe { alloc(layout) };
+        let source_ptx_layout = Layout::array::<core::ffi::c_char>(ptx_size).unwrap();
+        let source_ptx_buffer = unsafe { alloc(source_ptx_layout) };
 
         unsafe { nvrtc.nvrtcGetPTX(program, source_ptx_buffer as _ ) }.unwrap();
 
@@ -129,6 +153,8 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         let source_ptx = String::from_utf8_lossy(source_ptx_cstr.to_bytes()).to_string();
 
         unsafe { nvrtc.nvrtcDestroyProgram(&mut program) }.unwrap();
+
+        unsafe { dealloc(source_ptx_buffer, source_ptx_layout) };
 
         source_ptx
     }
