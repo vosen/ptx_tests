@@ -1,4 +1,4 @@
-use std::{alloc::{alloc, dealloc, Layout}, ffi::CStr, ptr};
+use std::{alloc::{alloc, dealloc, Layout}, ffi::{CStr, CString}, ptr};
 
 use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
 
@@ -17,7 +17,7 @@ mod sqrt;
 
 pub trait TestContext {
     fn cuda(&self) -> &Cuda;
-    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String;
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> CString;
 }
 
 pub struct TestFixture<L> {
@@ -29,7 +29,7 @@ impl TestContext for TestFixture<(Cuda,)> {
         &self.libs.0
     }
 
-    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String {
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> CString {
         /// Generate PTX test function signature.
         fn fmt_ptx_signature(args: &[&str]) -> String {
             let args: Vec<_> = args.iter().map(|a| format!(".param .u64 {}", a)).collect();
@@ -46,13 +46,15 @@ impl TestContext for TestFixture<(Cuda,)> {
             text
         }
 
-        format!(
-            "{}\n{}\n{{\n{}\n{}\nret;\n}}\0",
+        let source = format!(
+            "{}\n{}\n{{\n{}\n{}\nret;\n}}",
             ptx.header(),
             fmt_ptx_signature(ptx.args()),
             fmt_ptx_params_load(ptx.args()),
             ptx.body(),
-        )
+        );
+
+        CString::new(source).unwrap()
     }
 }
 
@@ -61,7 +63,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         &self.libs.0
     }
 
-    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> String {
+    fn prepare_test_source(&self, ptx: &dyn TestPtx) -> CString {
         /// Generate CUDA test function signature.
         fn fmt_cuda_signature(args: &[&str]) -> String {
             let args: Vec<_> = args.iter().map(|a| format!("uint64_t * {}", a)).collect();
@@ -108,10 +110,11 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         let nvrtc = &self.libs.1;
 
         let source_cuda = format!(
-            "{} {{\n{}\n}}\0",
+            "{} {{\n{}\n}}",
             fmt_cuda_signature(ptx.args()),
             ptx_to_inline(ptx.args(), &ptx.body()),
         );
+        let source_cuda = CString::new(source_cuda).unwrap();
 
         let mut program = ptr::null_mut();
         unsafe { nvrtc.nvrtcCreateProgram(&mut program, source_cuda.as_ptr() as _, ptr::null() as _, 0, ptr::null(), ptr::null()) }.unwrap();
@@ -149,8 +152,8 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
 
         unsafe { nvrtc.nvrtcGetPTX(program, source_ptx_buffer as _ ) }.unwrap();
 
-        let source_ptx_cstr = unsafe { CStr::from_ptr(source_ptx_buffer as _) };
-        let source_ptx = String::from_utf8_lossy(source_ptx_cstr.to_bytes()).to_string();
+        let source_ptx = unsafe { CStr::from_ptr(source_ptx_buffer as _) };
+        let source_ptx = source_ptx.to_owned();
 
         unsafe { nvrtc.nvrtcDestroyProgram(&mut program) }.unwrap();
 
