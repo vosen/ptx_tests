@@ -66,7 +66,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
     fn prepare_test_source(&self, ptx: &dyn TestPtx) -> CString {
         /// Generate CUDA test function signature.
         fn fmt_cuda_signature(args: &[&str]) -> String {
-            let args: Vec<_> = args.iter().map(|a| format!("uint64_t * {}", a)).collect();
+            let args: Vec<_> = args.iter().map(|a| format!("unsigned long long * {}", a)).collect();
             format!("extern \"C\" __global__ void run({})", args.join(", "))
         }
 
