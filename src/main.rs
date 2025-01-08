@@ -85,19 +85,21 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
     unsafe { cuda.cuCtxCreate_v2(&mut cuda_ctx, 0, 0) }.unwrap();
 
     for t in tests {
-        match (t.test)(&ctx) {
-            Ok(()) => println!("{}: OK", t.name),
-            Err(TestError::Mismatch(e)) => {
-                println!(
-                    "{}: FAIL with input {}\n    computed on GPU: {}\n    computed on CPU: {}",
-                    t.name, e.input, e.output, e.expected
-                );
-                failures += 1;
-            }
-            Err(TestError::Miscompile(name)) => {
-                println!("{}: FAIL: Compilation mismatch", name);
-                failures += 1;
-            }
+        use TestError::*;
+
+        let result = (t.test)(&ctx);
+        if result.is_err() {
+            failures += 1;
+        }
+
+        print!("{}: ", t.name);
+        match result {
+            Ok(()) => println!("OK"),
+            Err(CompilationFail { message }) => println!("FAIL - Compilation failed:\n{message}"),
+            Err(CompilationSuccess { name }) => println!("FAIL - Compilation mismatch, didn't expect '{name}' to compile"),
+            Err(ResultMismatch { input, output, expected }) => println!(
+                "FAIL - with input {input}\n    computed on GPU: {output}\n    computed on CPU: {expected}"
+            ),
         }
     }
 

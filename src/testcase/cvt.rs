@@ -2,7 +2,7 @@ use crate::common::{llvm_get_rounding, llvm_set_rounding};
 use crate::test::{make_range, TestFunction, TestPtx};
 use crate::{
     common::Rounding,
-    test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
+    test::{self, PtxScalar, TestCase, TestCommon},
 };
 use num::traits::AsPrimitive;
 use num::traits::ConstOne;
@@ -195,9 +195,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<T
             }
         }
     }
-    fn is_valid(&self) -> bool {
-        !is_invalid_cvt::<To, From>(self.rnd.as_ptx(), self.ftz, self.sat)
-    }
 }
 
 fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
@@ -206,7 +203,7 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
     sat: bool,
 ) -> (
     String,
-    TestFunction<bool, ResultMismatch>,
+    TestFunction,
 ) {
     let rnd_txt = match rnd {
         Rounding::Default => "",
