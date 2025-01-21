@@ -1,8 +1,8 @@
 use crate::common::{llvm_get_rounding, llvm_set_rounding};
+use crate::test::{make_range, TestFunction, TestPtx};
 use crate::{
     common::Rounding,
-    cuda::Cuda,
-    test::{self, PtxScalar, ResultMismatch, TestCase, TestCommon},
+    test::{self, PtxScalar, TestCase, TestCommon},
 };
 use num::traits::AsPrimitive;
 use num::traits::ConstOne;
@@ -143,6 +143,34 @@ impl<To: PtxScalar, From: PtxScalar> Cvt<To, From> {
     }
 }
 
+impl<To: PtxScalar, From: PtxScalar> TestPtx for Cvt<To, From> {
+    fn body(&self) -> String {
+        let src = include_str!("cvt.ptx");
+        let ftz = if self.ftz { ".ftz" } else { "" };
+        let sat = if self.sat { ".sat" } else { "" };
+        let rnd = self.rnd.as_ptx();
+        let modifiers = format!("{}{}{}", rnd, ftz, sat);
+        let input_bits = mem::size_of::<From>() * 8;
+        let output_bits = mem::size_of::<To>() * 8;
+        src
+            .replace("<INPUT>", From::name())
+            // PTX disallows ld.half::f16, but allows ld.b16 and implictly converts to half::f16
+            .replace("<INPUT_LD>", &format!("b{input_bits}"))
+            .replace("<INPUT_SIZE>", &mem::size_of::<From>().to_string())
+            .replace("<OUTPUT>", To::name())
+            .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
+            .replace("<OUTPUT_SIZE>", &mem::size_of::<To>().to_string())
+            .replace("<MODIFIERS>", &modifiers)
+    }
+
+    fn args(&self) -> &[&str] {
+        &[
+            "input",
+            "output",
+        ]
+    }
+}
+
 impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, From> {
     type Input = From;
 
@@ -152,27 +180,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> TestCommon for Cvt<To, Fr
         <Self::Input as HostConvert<Self::Output>>::convert(
             input, self.rnd, self.ftz, self.sat, output,
         )
-    }
-
-    fn ptx(&self) -> String {
-        let src = include_str!("cvt.ptx");
-        let ftz = if self.ftz { ".ftz" } else { "" };
-        let sat = if self.sat { ".sat" } else { "" };
-        let rnd = self.rnd.as_ptx();
-        let modifiers = format!("{}{}{}", rnd, ftz, sat);
-        let input_bits = mem::size_of::<Self::Input>() * 8;
-        let output_bits = mem::size_of::<Self::Output>() * 8;
-        let mut src = src
-            .replace("<INPUT>", Self::Input::name())
-            // PTX disallows ld.half::f16, but allows ld.b16 and implictly converts to half::f16
-            .replace("<INPUT_LD>", &format!("b{input_bits}"))
-            .replace("<INPUT_SIZE>", &mem::size_of::<Self::Input>().to_string())
-            .replace("<OUTPUT>", Self::Output::name())
-            .replace("<OUTPUT_ST>", &format!("b{output_bits}"))
-            .replace("<OUTPUT_SIZE>", &mem::size_of::<Self::Output>().to_string())
-            .replace("<MODIFIERS>", &modifiers);
-        src.push('\0');
-        src
     }
 }
 
@@ -188,9 +195,6 @@ impl<To: PtxScalar, From: PtxScalar + HostConvert<To>> test::RangeTest for Cvt<T
             }
         }
     }
-    fn is_valid(&self) -> bool {
-        !is_invalid_cvt::<To, From>(self.rnd.as_ptx(), self.ftz, self.sat)
-    }
 }
 
 fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
@@ -199,7 +203,7 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
     sat: bool,
 ) -> (
     String,
-    Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>,
+    TestFunction,
 ) {
     let rnd_txt = match rnd {
         Rounding::Default => "",
@@ -219,13 +223,11 @@ fn test_case<To: PtxScalar, From: PtxScalar + HostConvert<To>>(
         To::name(),
         From::name()
     );
-    let test = Box::new(move |cuda: &Cuda| {
-        test::run_range::<Cvt<To, From>>(cuda, Cvt::<To, From>::new(rnd, ftz, sat))
-    });
+    let test = make_range(Cvt::<To, From>::new(rnd, ftz, sat));
     (name, test)
 }
 
-pub(super) fn all_tests() -> Vec<TestCase> {
+pub fn all_tests() -> Vec<TestCase> {
     let mut result = Vec::new();
     let mut invalid_tests = Vec::new();
     gen_test!(result, invalid_tests);

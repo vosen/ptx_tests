@@ -1,26 +1,29 @@
-use crate::cuda::Cuda;
 use half::f16;
 use num::{Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{any::Any, fmt::Debug, mem, ptr, u32};
 
-pub trait TestCommon {
-    type Input: OnDevice;
-    type Output: OnDevice;
+use crate::{cuda::CUmodule, TestContext};
+
+pub trait TestPtx {
+    fn args(&self) -> &[&str];
+    fn body(&self) -> String;
+}
+
+pub trait TestCommon: TestPtx {
+    type Input: OnDevice + DebugRich;
+    type Output: OnDevice + DebugRich;
+
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output>;
-    fn ptx(&self) -> String;
 }
 
 pub trait RangeTest: TestCommon {
     const MAX_VALUE: u32 = u32::MAX;
     fn generate(&self, input: u32) -> Self::Input;
-    fn is_valid(&self) -> bool {
-        true
-    }
 }
 
-pub trait RandomTest: TestCommon {
+pub trait RandomTest: TestCommon + Default {
     fn generate<R: Rng>(rng: &mut R) -> Self::Input;
 }
 
@@ -282,8 +285,104 @@ impl<X: OnDevice, Y: OnDevice, Z: OnDevice, W: OnDevice> OnDevice for (X, Y, Z, 
     }
 }
 
-pub trait PtxScalar: Copy + Num + Bounded + Debug + OnDevice + Any {
+pub trait DebugRich {
+    fn debug_rich(&self) -> String;
+}
+
+macro_rules! impl_debug_rich {
+    ($type:ident) => {
+        impl DebugRich for $type {
+            fn debug_rich(&self) -> String {
+                format!("{self:#066b} {self:#X} {self}")
+            }
+        }
+    }
+}
+
+impl_debug_rich!(u16);
+impl_debug_rich!(i16);
+impl_debug_rich!(u32);
+impl_debug_rich!(i32);
+impl_debug_rich!(u64);
+impl_debug_rich!(i64);
+
+impl DebugRich for f16 {
+    fn debug_rich(&self) -> String {
+        format!("{self:#066b} {self:#X} {self:.24}")
+    }
+}
+
+impl DebugRich for f32 {
+    fn debug_rich(&self) -> String {
+        let bits = self.to_bits();
+        format!("{bits:#066b} {bits:#X} {self:.24}")
+    }
+}
+
+impl DebugRich for f64 {
+    fn debug_rich(&self) -> String {
+        let bits = self.to_bits();
+        format!("{bits:#066b} {bits:#X} {self:.24}")
+    }
+}
+
+impl<T: DebugRich> DebugRich for (T,) {
+    fn debug_rich(&self) -> String {
+        self.0.debug_rich()
+    }
+}
+
+impl<T1, T2> DebugRich for (T1, T2)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+        )
+    }
+}
+
+impl<T1, T2, T3> DebugRich for (T1, T2, T3)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+    T3: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+            self.2.debug_rich(),
+        )
+    }
+}
+
+impl<T1, T2, T3, T4> DebugRich for (T1, T2, T3, T4)
+where
+    T1: DebugRich,
+    T2: DebugRich,
+    T3: DebugRich,
+    T4: DebugRich,
+{
+    fn debug_rich(&self) -> String {
+        format!(
+            "(\n{},\n{},\n{},\n{},\n)",
+            self.0.debug_rich(),
+            self.1.debug_rich(),
+            self.2.debug_rich(),
+            self.3.debug_rich(),
+        )
+    }
+}
+
+pub trait PtxScalar: Copy + Num + Bounded + Debug + DebugRich + OnDevice + Any {
     fn name() -> &'static str;
+
     fn unsigned() -> bool {
         Self::min_value() == <Self as Zero>::zero()
     }
@@ -366,13 +465,31 @@ const GROUP_SIZE: usize = 128;
 // Totally unscientific number that works on my machine
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
-pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
-    // TOOD: fix
-    let src = T::ptx(&unsafe { mem::zeroed::<T>() });
-    let mut module = ptr::null_mut();
-    unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) }.unwrap();
+fn load_module(ctx: &dyn TestContext, t: &dyn TestPtx) -> Result<CUmodule, TestError> {
+    let cuda = ctx.cuda();
+
+    match ctx.prepare_test_source(t) {
+        Ok(src) => {
+            let mut module = ptr::null_mut();
+            let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
+
+            match load_result {
+                Ok(()) => Ok(module),
+                Err(code) => return Err(TestError::CompilationFail { message: format!("CUDA Error {code}") }),
+            }
+        },
+        Err(message) => return Err(TestError::CompilationFail { message }),
+    }
+}
+
+pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError> {
+    let cuda = ctx.cuda();
+    let t =  T::default();
+
+    let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
     unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
+
     let mut rng = XorShiftRng::seed_from_u64(SEED);
     let mut free_memory = 0;
     let mut total_memory = 0;
@@ -386,7 +503,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
-    let mut result = vec![T::Output::zero(); memory_batch_size / element_size];
+    let mut outputs = vec![T::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
         assert_eq!(T::Output::COMPONENTS, 1);
         let memory_batch_size = if iteration == iterations - 1 {
@@ -401,7 +518,7 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         for _ in 0..element_batch_size {
             T::generate(&mut rng).write(&mut inputs);
         }
-        result.resize(element_batch_size, T::Output::zero());
+        outputs.resize(element_batch_size, T::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -439,21 +556,19 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
         unsafe {
             cuda.cuMemcpyDtoH_v2(
-                result.as_mut_ptr() as _,
+                outputs.as_mut_ptr() as _,
                 dev_output,
-                result.len() * T::Output::size_of(),
+                outputs.len() * T::Output::size_of(),
             )
         }
         .unwrap();
-        for (i, result) in result.iter().copied().enumerate() {
-            let value = T::Input::read(&inputs, i);
-            let result = result;
-            // TODO: fix
-            if let Err(expected) = T::host_verify(&unsafe { mem::zeroed() }, value, result) {
-                return Err(ResultMismatch {
-                    input: format!("{:?}", value),
-                    output: format!("{:?}", result),
-                    expected: format!("{:?}", expected),
+        for (i, output) in outputs.iter().copied().enumerate() {
+            let input = T::Input::read(&inputs, i);
+            if let Err(expected) = t.host_verify(input, output) {
+                return Err(TestError::ResultMismatch {
+                    input: input.debug_rich(),
+                    output: output.debug_rich(),
+                    expected: expected.debug_rich(),
                 });
             }
         }
@@ -463,25 +578,21 @@ pub fn run_random<T: RandomTest>(cuda: &Cuda) -> Result<bool, ResultMismatch> {
         unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
     unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    Ok(true)
+
+    Ok(())
 }
 
 fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
 }
 
-pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMismatch> {
-    let src = Test::ptx(&t);
-    let mut module = ptr::null_mut();
-    let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
-    if t.is_valid() {
-        load_result.unwrap();
-    } else {
-        load_result.unwrap_err();
-        return Ok(false);
-    }
+pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), TestError> {
+    let cuda = ctx.cuda();
+
+    let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
     unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
+
     let mut free_memory = 0;
     let mut total_memory = 0;
     unsafe { cuda.cuMemGetInfo_v2(&mut free_memory, &mut total_memory) }.unwrap();
@@ -499,7 +610,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
-    let mut result = vec![Test::Output::zero(); memory_batch_size / element_size];
+    let mut outputs = vec![Test::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
         assert_eq!(Test::Output::COMPONENTS, 1);
         let elment_start = iteration * memory_batch_size / element_size;
@@ -516,7 +627,7 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
             let input = t.generate((elment_start + i) as u32);
             input.write(&mut inputs);
         }
-        result.resize(element_batch_size, Test::Output::zero());
+        outputs.resize(element_batch_size, Test::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -559,20 +670,19 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
         unsafe { cuda.cuStreamSynchronize(0 as _) }.unwrap();
         unsafe {
             cuda.cuMemcpyDtoH_v2(
-                result.as_mut_ptr() as _,
+                outputs.as_mut_ptr() as _,
                 dev_output,
-                result.len() * Test::Output::size_of(),
+                outputs.len() * Test::Output::size_of(),
             )
         }
         .unwrap();
-        for (i, result) in result.iter().copied().enumerate() {
-            let value = Test::Input::read(&inputs, i);
-            let result = result;
-            if let Err(expected) = t.host_verify(value, result) {
-                return Err(ResultMismatch {
-                    input: format!("{:.24?}", value),
-                    output: format!("{:.24?}", result),
-                    expected: format!("{:.24?}", expected),
+        for (i, output) in outputs.iter().copied().enumerate() {
+            let input = Test::Input::read(&inputs, i);
+            if let Err(expected) = t.host_verify(input, output) {
+                return Err(TestError::ResultMismatch {
+                    input: input.debug_rich(),
+                    output: output.debug_rich(),
+                    expected: expected.debug_rich(),
                 });
             }
         }
@@ -582,22 +692,27 @@ pub fn run_range<Test: RangeTest>(cuda: &Cuda, t: Test) -> Result<bool, ResultMi
         unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
     unsafe { cuda.cuModuleUnload(module) }.unwrap();
-    Ok(true)
+
+    Ok(())
+}
+
+pub type TestFunction = Box<dyn FnOnce(&dyn TestContext) -> Result<(), TestError>>;
+
+pub fn make_random<T: RandomTest>() -> TestFunction {
+    return Box::new(|ctx| run_random::<T>(ctx));
+}
+
+pub fn make_range<T: RangeTest + 'static>(t: T) -> TestFunction {
+    return Box::new(move |ctx| run_range::<T>(ctx, t));
 }
 
 pub struct TestCase {
-    pub test: Box<dyn FnOnce(&Cuda) -> Result<(), TestError>>,
+    pub test: TestFunction,
     pub name: String,
 }
 
 impl TestCase {
-    pub fn new(name: String, test: Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>) -> Self {
-        let name_copy = name.clone();
-        let test = Box::new(move |cuda: &Cuda| match test(cuda) {
-            Ok(true) => Ok(()),
-            Ok(false) => Err(TestError::Miscompile(name_copy)),
-            Err(err) => Err(TestError::Mismatch(err)),
-        });
+    pub fn new(name: String, test: TestFunction) -> Self {
         TestCase { test, name }
     }
 
@@ -605,15 +720,17 @@ impl TestCase {
         name: String,
         tests: Vec<(
             String,
-            Box<dyn FnOnce(&Cuda) -> Result<bool, ResultMismatch>>,
+            TestFunction,
         )>,
     ) -> Self {
-        let test = Box::new(move |cuda: &Cuda| {
+        use TestError::*;
+
+        let test = Box::new(move |ctx: &dyn TestContext| {
             for (name, test) in tests {
-                match test(cuda) {
-                    Ok(false) => {}
-                    Ok(true) => return Err(TestError::Miscompile(name)),
-                    Err(_) => return Err(TestError::Miscompile(name)),
+                match test(ctx) {
+                    Err(CompilationFail { .. }) => {},
+                    Ok(()) | Err(ResultMismatch { .. }) => return Err(CompilationSuccess { name }),
+                    Err(CompilationSuccess { .. }) => unreachable!("tests may not report CompilationSuccess"),
                 }
             }
             Ok(())
@@ -622,13 +739,20 @@ impl TestCase {
     }
 }
 
+/// Errors that a test can produce.
 pub enum TestError {
-    Miscompile(String),
-    Mismatch(ResultMismatch),
-}
-
-pub struct ResultMismatch {
-    pub input: String,
-    pub output: String,
-    pub expected: String,
+    /// Used when compilation fails, e.g. during CUDA module loading or NVRTC launch
+    CompilationFail {
+        message: String,
+    },
+    /// Used when tests that should have failed compilation, succeed unexpectedly
+    CompilationSuccess {
+        name: String,
+    },
+    /// Used when the test compiled successfully, but found mismatching values
+    ResultMismatch {
+        input: String,
+        output: String,
+        expected: String,
+    },
 }
