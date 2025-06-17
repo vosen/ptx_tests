@@ -21,7 +21,7 @@ fn bfe_rng<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default>() -> TestCase
 where
     Standard: Distribution<T>,
 {
-    let test = make_random::<Bfe<T>>();
+    let test = make_random(Bfe::<T>::default());
     TestCase::new(format!("bfe_rng_{}", T::name()), test)
 }
 
@@ -123,7 +123,7 @@ impl<T: PtxScalar + AsPrimitive<usize> + PrimInt + Default> RandomTest for Bfe<T
 where
     Standard: Distribution<T>,
 {
-    fn generate<R: Rng + ?Sized>(rng: &mut R) -> Self::Input {
+    fn generate<R: Rng + ?Sized>(&self, rng: &mut R) -> Self::Input {
         let value = rng.gen();
         let len = (rng.gen::<u16>() & 0x1ff) as u32;
         let pos = (rng.gen::<u16>() & 0x1ff) as u32;

@@ -24,7 +24,7 @@ pub trait RangeTest: TestCommon {
 }
 
 pub trait RandomTest: TestCommon + Default {
-    fn generate<R: Rng>(rng: &mut R) -> Self::Input;
+    fn generate<R: Rng>(&self, rng: &mut R) -> Self::Input;
 }
 
 pub trait OnDevice: Copy + Debug {
@@ -482,9 +482,8 @@ fn load_module(ctx: &dyn TestContext, t: &dyn TestPtx) -> Result<CUmodule, TestE
     }
 }
 
-pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError> {
+pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<(), TestError> {
     let cuda = ctx.cuda();
-    let t =  T::default();
 
     let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
@@ -497,15 +496,15 @@ pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError>
     let max_memory = (total_memory / 2).min(SAFE_MEMORY_LIMIT);
     let total_elements = 2.pow(32);
     assert!(total_elements % GROUP_SIZE == 0);
-    let element_size = T::Input::size_of() + T::Output::size_of();
+    let element_size = Test::Input::size_of() + Test::Output::size_of();
     let required_memory = total_elements * element_size;
     let iterations = (required_memory / max_memory).max(1);
     let memory_batch_size: usize =
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
-    let mut inputs = vec![Vec::new(); T::Input::COMPONENTS];
-    let mut outputs = vec![T::Output::zero(); memory_batch_size / element_size];
+    let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
+    let mut outputs = vec![Test::Output::zero(); memory_batch_size / element_size];
     for iteration in 0..iterations {
-        assert_eq!(T::Output::COMPONENTS, 1);
+        assert_eq!(Test::Output::COMPONENTS, 1);
         let memory_batch_size = if iteration == iterations - 1 {
             required_memory - (memory_batch_size * (iterations - 1))
         } else {
@@ -516,9 +515,9 @@ pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError>
             vec.clear();
         }
         for _ in 0..element_batch_size {
-            T::generate(&mut rng).write(&mut inputs);
+            t.generate(&mut rng).write(&mut inputs);
         }
-        outputs.resize(element_batch_size, T::Output::zero());
+        outputs.resize(element_batch_size, Test::Output::zero());
         let dev_inputs: Vec<u64> = inputs
             .iter()
             .map(|vec| {
@@ -530,7 +529,7 @@ pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError>
             })
             .collect();
         let mut dev_output = 0;
-        unsafe { cuda.cuMemAlloc_v2(&mut dev_output, element_batch_size * T::Output::size_of()) }
+        unsafe { cuda.cuMemAlloc_v2(&mut dev_output, element_batch_size * Test::Output::size_of()) }
             .unwrap();
         let mut args = dev_inputs
             .iter()
@@ -558,12 +557,12 @@ pub fn run_random<T: RandomTest>(ctx: &dyn TestContext) -> Result<(), TestError>
             cuda.cuMemcpyDtoH_v2(
                 outputs.as_mut_ptr() as _,
                 dev_output,
-                outputs.len() * T::Output::size_of(),
+                outputs.len() * Test::Output::size_of(),
             )
         }
         .unwrap();
         for (i, output) in outputs.iter().copied().enumerate() {
-            let input = T::Input::read(&inputs, i);
+            let input = Test::Input::read(&inputs, i);
             if let Err(expected) = t.host_verify(input, output) {
                 return Err(TestError::ResultMismatch {
                     input: input.debug_rich(),
@@ -698,8 +697,8 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
 
 pub type TestFunction = Box<dyn FnOnce(&dyn TestContext) -> Result<(), TestError>>;
 
-pub fn make_random<T: RandomTest>() -> TestFunction {
-    return Box::new(|ctx| run_random::<T>(ctx));
+pub fn make_random<T: RandomTest + 'static>(t: T) -> TestFunction {
+    return Box::new(move |ctx| run_random::<T>(ctx, t));
 }
 
 pub fn make_range<T: RangeTest + 'static>(t: T) -> TestFunction {

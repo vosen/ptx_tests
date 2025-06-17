@@ -17,7 +17,7 @@ where
     Standard: Distribution<T>,
 {
     let bits = mem::size_of::<T>() * 8;
-    let test = make_random::<Bfi<T>>();
+    let test = make_random(Bfi::<T>::default());
     TestCase::new(format!("bfi_rng_b{}", bits), test)
 }
 
@@ -94,7 +94,7 @@ impl<T: PtxScalar + PrimInt + AsPrimitive<usize> + Default> RandomTest for Bfi<T
 where
     Standard: Distribution<T>,
 {
-    fn generate<R: Rng + ?Sized>(rng: &mut R) -> Self::Input {
+    fn generate<R: Rng + ?Sized>(&self, rng: &mut R) -> Self::Input {
         let a = rng.gen();
         let b = rng.gen();
         let len = (rng.gen::<u16>() & 0x1ff) as u32;

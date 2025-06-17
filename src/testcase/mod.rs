@@ -2,6 +2,8 @@ use std::{alloc::{alloc, dealloc, Layout}, ffi::{CStr, CString}, ptr};
 
 use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
 
+mod add;
+mod add_f;
 mod bfe;
 mod bfi;
 mod brev;
@@ -14,6 +16,9 @@ mod rsqrt;
 mod shift;
 mod sin;
 mod sqrt;
+mod sub;
+mod tanh;
+mod testp;
 
 pub trait TestContext {
     fn cuda(&self) -> &Cuda;
@@ -178,18 +183,23 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
 
 pub fn tests() -> Vec<TestCase> {
     let mut tests = vec![];
+    tests.extend(add::all_tests());
+    tests.extend(add_f::all_tests());
     tests.extend(bfe::all_tests());
     tests.extend(bfi::all_tests());
     tests.extend(brev::all_tests());
-    tests.extend(cvt::all_tests());
-    tests.extend(rcp::all_tests());
-    tests.extend(shift::all_tests());
-    tests.extend(minmax::all_tests());
-    tests.extend(sqrt::all_tests());
-    tests.extend(rsqrt::all_tests());
-    tests.extend(sin::all_tests());
     tests.extend(cos::all_tests());
+    tests.extend(cvt::all_tests());
     tests.extend(lg2::all_tests());
+    tests.extend(minmax::all_tests());
+    tests.extend(rcp::all_tests());
+    tests.extend(rsqrt::all_tests());
+    tests.extend(shift::all_tests());
+    tests.extend(sin::all_tests());
+    tests.extend(sqrt::all_tests());
+    tests.extend(sub::all_tests());
+    tests.extend(tanh::all_tests());
+    tests.extend(testp::all_tests());
 
     tests.sort_unstable_by_key(|t| t.name.clone());
 

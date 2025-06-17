@@ -1,0 +1,21 @@
+.reg .u32       tid_x;
+.reg .u64       tid_x_64;
+.reg .u32       ntid_x;
+.reg .u32       ctaid_x;
+.reg .u64       global_id_64;
+mov.u32         tid_x, %tid.x;
+cvt.u64.u32     tid_x_64, tid_x;
+mov.u32         ctaid_x, %ctaid.x;
+mov.u32         ntid_x, %ntid.x;
+mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
+
+mad.lo.u64      input_addr, global_id_64, <TYPE_SIZE>, input_addr;
+mad.lo.u64      output_addr, global_id_64, 4, output_addr;
+
+.reg .<TYPE>     value;
+.reg .pred     p;
+ld.<TYPE>       value, [input_addr];
+testp.<MODE>.<TYPE> p, value;
+.reg .u32      result;
+selp.u32        result, 1, 0, p;
+st.u32          [output_addr], result;

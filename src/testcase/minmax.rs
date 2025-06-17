@@ -1,4 +1,7 @@
-use crate::{common, test::{make_range, RangeTest, TestCase, TestCommon, TestPtx}};
+use crate::{
+    common,
+    test::{make_range, RangeTest, TestCase, TestCommon, TestPtx},
+};
 use std::mem;
 
 pub static PTX: &str = include_str!("minmax.ptx");
@@ -20,10 +23,7 @@ fn min(ftz: bool, nan: bool) -> TestCase {
         if ftz { "_ftz" } else { "" },
         if nan { "_nan" } else { "" }
     );
-    TestCase::new(
-        name.to_string(),
-        make_range(Min { ftz, nan }),
-    )
+    TestCase::new(name.to_string(), make_range(Min { ftz, nan }))
 }
 
 fn max(ftz: bool, nan: bool) -> TestCase {
@@ -32,10 +32,7 @@ fn max(ftz: bool, nan: bool) -> TestCase {
         if ftz { "_ftz" } else { "" },
         if nan { "_nan" } else { "" }
     );
-    TestCase::new(
-        name.to_string(),
-        make_range(Max { ftz, nan }),
-    )
+    TestCase::new(name.to_string(), make_range(Max { ftz, nan }))
 }
 
 struct Min {
@@ -50,19 +47,14 @@ impl TestPtx for Min {
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        PTX
-            .replace("<TYPE_SIZE>", "2")
+        PTX.replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
             .replace("<OP>", &name)
     }
 
     fn args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
+        &["input_a", "input_b", "output"]
     }
 }
 
@@ -72,10 +64,8 @@ impl TestCommon for Min {
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         let (a, b) = input;
-        let expected = minmax_host(a, b, self.nan, self.ftz, f16::min);
-        if (expected.is_nan() && output.is_nan())
-            || (expected.to_ne_bytes() == output.to_ne_bytes())
-        {
+        let expected = minmax_host(a, b, self.nan, self.ftz, f16::minimum);
+        if (expected.is_nan() && output.is_nan()) || (expected.to_bits() == output.to_bits()) {
             Ok(())
         } else {
             Err(expected)
@@ -101,19 +91,14 @@ impl TestPtx for Max {
             if self.ftz { ".ftz" } else { "" },
             if self.nan { ".NaN" } else { "" }
         );
-        PTX
-            .replace("<TYPE_SIZE>", "2")
+        PTX.replace("<TYPE_SIZE>", "2")
             .replace("<TYPE>", "f16")
             .replace("<BTYPE>", "b16")
             .replace("<OP>", &name)
     }
 
     fn args(&self) -> &[&str] {
-        &[
-            "input_a",
-            "input_b",
-            "output",
-        ]
+        &["input_a", "input_b", "output"]
     }
 }
 
@@ -123,10 +108,8 @@ impl TestCommon for Max {
 
     fn host_verify(&self, input: Self::Input, output: Self::Output) -> Result<(), Self::Output> {
         let (a, b) = input;
-        let expected = minmax_host(a, b, self.nan, self.ftz, f16::max);
-        if (expected.is_nan() && output.is_nan())
-            || (expected.to_ne_bytes() == output.to_ne_bytes())
-        {
+        let expected = minmax_host(a, b, self.nan, self.ftz, f16::maximum);
+        if (expected.is_nan() && output.is_nan()) || (expected.to_bits() == output.to_bits()) {
             Ok(())
         } else {
             Err(expected)
@@ -158,11 +141,8 @@ fn minmax_host(
     } else if b.is_nan() {
         a
     } else {
-        unsafe {
-            mem::transmute(fn_(
-                mem::transmute::<_, f16>(a),
-                mem::transmute::<_, f16>(b),
-            ))
-        }
+        half::f16::from_bits(
+            fn_(f16::from_bits(a.to_bits()), f16::from_bits(b.to_bits())).to_bits(),
+        )
     }
 }

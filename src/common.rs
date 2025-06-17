@@ -80,9 +80,17 @@ extern "C" {
 
 pub const MAX_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x807FFFFFu32) };
 pub const MAX_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x007FFFFFu32) };
+pub const MIN_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x00000001u32) };
+pub const MIN_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x80000001u32) };
+//pub const SIGNALING_NAN: f32 = unsafe { mem::transmute(0x7F800001u32) };
 
 pub const MAX_NEGATIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x83FFu16) };
 pub const MAX_POSITIVE_SUBNORMAL_F16: half::f16 = unsafe { mem::transmute(0x03FFu16) };
+
+//pub const MAX_NEGATIVE_SUBNORMAL_F64: f64 = unsafe { mem::transmute(0x800FFFFFFFFFFFFFu64) };
+//pub const MAX_POSITIVE_SUBNORMAL_F64: f64 = unsafe { mem::transmute(0x000FFFFFFFFFFFFFu64) };
+//pub const SIGNALING_NAN_F64: f64 = unsafe { mem::transmute(0x7FF0000000000001u64) };
+
 
 pub fn flush_to_zero_f32<T: Float + Copy + 'static>(x: &mut T, ftz: bool)
 where
