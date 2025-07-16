@@ -4,7 +4,32 @@ use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use std::{any::Any, fmt::Debug, mem, ptr, u32};
 
-use crate::{cuda::CUmodule, TestContext};
+use crate::{
+    cuda::{CUmodule, Cuda},
+    TestContext,
+};
+
+struct CudaModule<'a> {
+    cuda: &'a Cuda,
+    value: CUmodule,
+}
+
+impl<'a> Drop for CudaModule<'a> {
+    fn drop(&mut self) {
+        unsafe { self.cuda.cuModuleUnload(self.value) }.unwrap();
+    }
+}
+
+struct DevicePtr<'a> {
+    cuda: &'a Cuda,
+    value: u64,
+}
+
+impl<'a> Drop for DevicePtr<'a> {
+    fn drop(&mut self) {
+        unsafe { self.cuda.cuMemFree_v2(self.value) }.unwrap();
+    }
+}
 
 pub trait TestPtx {
     fn args(&self) -> &[&str];
@@ -23,7 +48,7 @@ pub trait RangeTest: TestCommon {
     fn generate(&self, input: u32) -> Self::Input;
 }
 
-pub trait RandomTest: TestCommon + Default {
+pub trait RandomTest: TestCommon {
     fn generate<R: Rng>(&self, rng: &mut R) -> Self::Input;
 }
 
@@ -36,6 +61,18 @@ pub trait OnDevice: Copy + Debug {
     }
     fn zero() -> Self {
         unsafe { mem::zeroed::<Self>() }
+    }
+}
+
+impl OnDevice for bool {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        <u8 as OnDevice>::write(self as u8, buffers)
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        <u8 as OnDevice>::read(buffers, index) != 0
     }
 }
 
@@ -296,6 +333,12 @@ macro_rules! impl_debug_rich {
                 format!("{self:#066b} {self:#X} {self}")
             }
         }
+    };
+}
+
+impl DebugRich for bool {
+    fn debug_rich(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -338,11 +381,7 @@ where
     T2: DebugRich,
 {
     fn debug_rich(&self) -> String {
-        format!(
-            "(\n{},\n{},\n)",
-            self.0.debug_rich(),
-            self.1.debug_rich(),
-        )
+        format!("(\n{},\n{},\n)", self.0.debug_rich(), self.1.debug_rich(),)
     }
 }
 
@@ -465,7 +504,7 @@ const GROUP_SIZE: usize = 128;
 // Totally unscientific number that works on my machine
 const SAFE_MEMORY_LIMIT: usize = 1 << 29;
 
-fn load_module(ctx: &dyn TestContext, t: &dyn TestPtx) -> Result<CUmodule, TestError> {
+fn load_module<'a>(ctx: &'a dyn TestContext, t: &dyn TestPtx) -> Result<CudaModule<'a>, TestError> {
     let cuda = ctx.cuda();
 
     match ctx.prepare_test_source(t) {
@@ -474,10 +513,17 @@ fn load_module(ctx: &dyn TestContext, t: &dyn TestPtx) -> Result<CUmodule, TestE
             let load_result = unsafe { cuda.cuModuleLoadData(&mut module, src.as_ptr() as _) };
 
             match load_result {
-                Ok(()) => Ok(module),
-                Err(code) => return Err(TestError::CompilationFail { message: format!("CUDA Error {code}") }),
+                Ok(()) => Ok(CudaModule {
+                    cuda,
+                    value: module,
+                }),
+                Err(code) => {
+                    return Err(TestError::CompilationFail {
+                        message: format!("CUDA Error {code}"),
+                    })
+                }
             }
-        },
+        }
         Err(message) => return Err(TestError::CompilationFail { message }),
     }
 }
@@ -487,7 +533,7 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
 
     let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
+    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }.unwrap();
 
     let mut rng = XorShiftRng::seed_from_u64(SEED);
     let mut free_memory = 0;
@@ -518,24 +564,23 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
             t.generate(&mut rng).write(&mut inputs);
         }
         outputs.resize(element_batch_size, Test::Output::zero());
-        let dev_inputs: Vec<u64> = inputs
+        let dev_inputs: Vec<_> = inputs
             .iter()
             .map(|vec| {
-                let mut devptr = 0;
-                unsafe { cuda.cuMemAlloc_v2(&mut devptr, vec.len()) }.unwrap();
-                unsafe { cuda.cuMemcpyHtoD_v2(devptr, vec.as_ptr().cast_mut().cast(), vec.len()) }
-                    .unwrap();
+                let devptr = cuda_malloc(cuda, vec.len());
+                unsafe {
+                    cuda.cuMemcpyHtoD_v2(devptr.value, vec.as_ptr().cast_mut().cast(), vec.len())
+                }
+                .unwrap();
                 devptr
             })
             .collect();
-        let mut dev_output = 0;
-        unsafe { cuda.cuMemAlloc_v2(&mut dev_output, element_batch_size * Test::Output::size_of()) }
-            .unwrap();
+        let dev_output = cuda_malloc(cuda, element_batch_size * Test::Output::size_of());
         let mut args = dev_inputs
             .iter()
-            .map(|ptr| ptr as *const u64)
+            .map(|dev_ptr| &dev_ptr.value as *const u64)
             .collect::<Vec<_>>();
-        args.push(&dev_output);
+        args.push(&dev_output.value);
         unsafe {
             cuda.cuLaunchKernel(
                 kernel,
@@ -556,7 +601,7 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
         unsafe {
             cuda.cuMemcpyDtoH_v2(
                 outputs.as_mut_ptr() as _,
-                dev_output,
+                dev_output.value,
                 outputs.len() * Test::Output::size_of(),
             )
         }
@@ -571,14 +616,15 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
                 });
             }
         }
-        for devptr in dev_inputs {
-            unsafe { cuda.cuMemFree_v2(devptr) }.unwrap();
-        }
-        unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
-    unsafe { cuda.cuModuleUnload(module) }.unwrap();
 
     Ok(())
+}
+
+fn cuda_malloc<'a>(cuda: &'a Cuda, size: usize) -> DevicePtr<'a> {
+    let mut value = 0;
+    unsafe { cuda.cuMemAlloc_v2(&mut value, size) }.unwrap();
+    DevicePtr { cuda, value }
 }
 
 fn next_multiple_of(value: usize, multiple: usize) -> usize {
@@ -590,7 +636,7 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
 
     let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module, c"run".as_ptr()) }.unwrap();
+    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }.unwrap();
 
     let mut free_memory = 0;
     let mut total_memory = 0;
@@ -627,29 +673,23 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
             input.write(&mut inputs);
         }
         outputs.resize(element_batch_size, Test::Output::zero());
-        let dev_inputs: Vec<u64> = inputs
+        let dev_inputs: Vec<_> = inputs
             .iter()
             .map(|vec| {
-                let mut devptr = 0;
-                unsafe { cuda.cuMemAlloc_v2(&mut devptr, vec.len()) }.unwrap();
-                unsafe { cuda.cuMemcpyHtoD_v2(devptr, vec.as_ptr().cast_mut().cast(), vec.len()) }
-                    .unwrap();
+                let devptr = cuda_malloc(cuda, vec.len());
+                unsafe {
+                    cuda.cuMemcpyHtoD_v2(devptr.value, vec.as_ptr().cast_mut().cast(), vec.len())
+                }
+                .unwrap();
                 devptr
             })
             .collect();
-        let mut dev_output = 0;
-        unsafe {
-            cuda.cuMemAlloc_v2(
-                &mut dev_output,
-                element_batch_size * Test::Output::size_of(),
-            )
-        }
-        .unwrap();
+        let dev_output = cuda_malloc(cuda, element_batch_size * Test::Output::size_of());
         let mut args = dev_inputs
             .iter()
-            .map(|ptr| ptr as *const u64)
+            .map(|ptr| &ptr.value as *const u64)
             .collect::<Vec<_>>();
-        args.push(&dev_output);
+        args.push(&dev_output.value);
         unsafe {
             cuda.cuLaunchKernel(
                 kernel,
@@ -670,7 +710,7 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
         unsafe {
             cuda.cuMemcpyDtoH_v2(
                 outputs.as_mut_ptr() as _,
-                dev_output,
+                dev_output.value,
                 outputs.len() * Test::Output::size_of(),
             )
         }
@@ -685,12 +725,7 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
                 });
             }
         }
-        for devptr in dev_inputs {
-            unsafe { cuda.cuMemFree_v2(devptr) }.unwrap();
-        }
-        unsafe { cuda.cuMemFree_v2(dev_output) }.unwrap();
     }
-    unsafe { cuda.cuModuleUnload(module) }.unwrap();
 
     Ok(())
 }
@@ -715,21 +750,17 @@ impl TestCase {
         TestCase { test, name }
     }
 
-    pub fn join_invalid_tests(
-        name: String,
-        tests: Vec<(
-            String,
-            TestFunction,
-        )>,
-    ) -> Self {
+    pub fn join_invalid_tests(name: String, tests: Vec<(String, TestFunction)>) -> Self {
         use TestError::*;
 
         let test = Box::new(move |ctx: &dyn TestContext| {
             for (name, test) in tests {
                 match test(ctx) {
-                    Err(CompilationFail { .. }) => {},
+                    Err(CompilationFail { .. }) => {}
                     Ok(()) | Err(ResultMismatch { .. }) => return Err(CompilationSuccess { name }),
-                    Err(CompilationSuccess { .. }) => unreachable!("tests may not report CompilationSuccess"),
+                    Err(CompilationSuccess { .. }) => {
+                        unreachable!("tests may not report CompilationSuccess")
+                    }
                 }
             }
             Ok(())
@@ -741,13 +772,9 @@ impl TestCase {
 /// Errors that a test can produce.
 pub enum TestError {
     /// Used when compilation fails, e.g. during CUDA module loading or NVRTC launch
-    CompilationFail {
-        message: String,
-    },
+    CompilationFail { message: String },
     /// Used when tests that should have failed compilation, succeed unexpectedly
-    CompilationSuccess {
-        name: String,
-    },
+    CompilationSuccess { name: String },
     /// Used when the test compiled successfully, but found mismatching values
     ResultMismatch {
         input: String,

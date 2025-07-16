@@ -1,0 +1,26 @@
+.reg .u32       tid_x;
+.reg .u64       tid_x_64;
+.reg .u32       ntid_x;
+.reg .u32       ctaid_x;
+.reg .u64       global_id_64;
+mov.u32         tid_x, %tid.x;
+cvt.u64.u32     tid_x_64, tid_x;
+mov.u32         ctaid_x, %ctaid.x;
+mov.u32         ntid_x, %ntid.x;
+mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
+
+mad.lo.u64      input_a_addr, global_id_64, 4, input_a_addr;
+mad.lo.u64      input_b_addr, global_id_64, 4, input_b_addr;
+mad.lo.u64      input_c_addr, global_id_64, 4, input_c_addr;
+mad.lo.u64      output_addr,  global_id_64, 4, output_addr;
+
+.reg .f32    a;
+.reg .f32    b;
+.reg .f32    c;
+.reg .f32    result;
+
+ld.f32       a, [input_a_addr];
+ld.f32       b, [input_b_addr];
+ld.f32       c, [input_c_addr];
+fma<RND><FLUSH><SAT>.f32  result, a, b, c;
+st.f32       [output_addr], result;

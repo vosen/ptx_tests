@@ -1,0 +1,27 @@
+    .reg .u32       tid_x;
+    .reg .u64       tid_x_64;
+    .reg .u32       ntid_x;
+    .reg .u32       ctaid_x;
+    .reg .u64       global_id_64;
+    mov.u32         tid_x, %tid.x;
+    cvt.u64.u32     tid_x_64, tid_x;
+    mov.u32         ctaid_x, %ctaid.x;
+    mov.u32         ntid_x, %ntid.x;
+    mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
+
+    mad.lo.u64      input0_addr, global_id_64, 4, input0_addr;
+    mad.lo.u64      input1_addr, global_id_64, 4, input1_addr;
+    mad.lo.u64      input2_addr, global_id_64, 4, input2_addr;
+    mad.lo.u64      output_addr, global_id_64, 4, output_addr;
+
+    .reg .<ATYPE>   a;
+    .reg .u32       b;
+    .reg .<DTYPE>   c;
+    .reg .<DTYPE>   d;
+
+    ld.<ATYPE>     a, [input0_addr];
+    ld.u32         b, [input1_addr];
+    ld.<DTYPE>     c, [input2_addr];
+
+    vshr.<DTYPE>.<ATYPE>.u32<SAT><MODE><OP2> d, a, b<OP2_ARGS>;
+    st.<DTYPE>     [output_addr], d;

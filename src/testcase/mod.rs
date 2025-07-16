@@ -2,6 +2,7 @@ use std::{alloc::{alloc, dealloc, Layout}, ffi::{CStr, CString}, ptr};
 
 use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
 
+mod abs;
 mod add;
 mod add_f;
 mod bfe;
@@ -9,16 +10,32 @@ mod bfi;
 mod brev;
 mod cos;
 mod cvt;
+mod div;
+mod fma_f;
+mod dot_product;
 mod lg2;
 mod minmax;
+mod mad;
+mod mul24;
+mod prmt;
+mod neg;
+mod mul;
+mod mul_f;
 mod rcp;
 mod rsqrt;
+mod sad;
+mod shf;
+mod set;
 mod shift;
 mod sin;
 mod sqrt;
 mod sub;
+mod sub_f;
 mod tanh;
 mod testp;
+mod vshr;
+mod ex2;
+
 
 pub trait TestContext {
     fn cuda(&self) -> &Cuda;
@@ -183,6 +200,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
 
 pub fn tests() -> Vec<TestCase> {
     let mut tests = vec![];
+    tests.extend(abs::all_tests());
     tests.extend(add::all_tests());
     tests.extend(add_f::all_tests());
     tests.extend(bfe::all_tests());
@@ -190,16 +208,31 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(brev::all_tests());
     tests.extend(cos::all_tests());
     tests.extend(cvt::all_tests());
+    tests.extend(div::all_tests());
+    tests.extend(fma_f::all_tests());
+    tests.extend(dot_product::all_tests());
     tests.extend(lg2::all_tests());
     tests.extend(minmax::all_tests());
+    tests.extend(mad::all_tests());
+    tests.extend(mul24::all_tests());
+    tests.extend(prmt::all_tests());
+    tests.extend(neg::all_tests());
+    tests.extend(mul::all_tests());
+    tests.extend(mul_f::all_tests());
     tests.extend(rcp::all_tests());
     tests.extend(rsqrt::all_tests());
+    tests.extend(sad::all_tests());
+    tests.extend(shf::all_tests());
     tests.extend(shift::all_tests());
     tests.extend(sin::all_tests());
+    tests.extend(set::all_tests());
     tests.extend(sqrt::all_tests());
     tests.extend(sub::all_tests());
+    tests.extend(sub_f::all_tests());
     tests.extend(tanh::all_tests());
     tests.extend(testp::all_tests());
+    tests.extend(vshr::all_tests());
+    tests.extend(ex2::all_tests());
 
     tests.sort_unstable_by_key(|t| t.name.clone());
 

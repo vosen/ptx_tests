@@ -1,6 +1,5 @@
 use crate::common::{flush_to_zero_f32, Rounding};
 use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
-use std::mem;
 
 pub static PTX: &str = include_str!("rcp.ptx");
 
@@ -44,10 +43,7 @@ impl<const APPROX: bool> TestPtx for Rcp<APPROX> {
     }
 
     fn args(&self) -> &[&str] {
-        &[
-            "input",
-            "output",
-        ]
+        &["input", "output"]
     }
 }
 
@@ -100,7 +96,7 @@ impl<const APPROX: bool> TestCommon for Rcp<APPROX> {
             }
         } else {
             let precise_result = rcp_host(input);
-            let mut result = self.rnd.with(|| precise_result as f32);
+            let mut result = self.rnd.with_f32(|| precise_result as f32);
             flush_to_zero_f32(&mut result, self.ftz);
             if result.is_nan() && output.is_nan() {
                 Ok(())
@@ -122,19 +118,19 @@ impl<const APPROX: bool> TestCommon for Rcp<APPROX> {
     }
 }
 
-const MAX_NEGATIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x807FFFFFu32) };
-const MAX_POSITIVE_SUBNORMAL: f32 = unsafe { mem::transmute(0x007FFFFFu32) };
+const MAX_NEGATIVE_SUBNORMAL: f32 = f32::from_bits(0x807FFFFFu32);
+const MAX_POSITIVE_SUBNORMAL: f32 = f32::from_bits(0x007FFFFFu32);
 
 impl<const APPROX: bool> RangeTest for Rcp<APPROX> {
     const MAX_VALUE: u32 = if APPROX {
-        (unsafe { mem::transmute::<_, u32>(2.0f32) - mem::transmute::<_, u32>(1.0f32) }) + 127
+        (f32::to_bits(2.0f32) - f32::to_bits(1.0f32)) + 127
     } else {
         u32::MAX
     };
 
     fn generate(&self, input: u32) -> Self::Input {
         if APPROX {
-            let max_number = unsafe { mem::transmute::<_, u32>(2.0f32) };
+            let max_number = f32::to_bits(2.0f32);
             if input > max_number {
                 match input - max_number {
                     1 => f32::NEG_INFINITY,
@@ -147,10 +143,10 @@ impl<const APPROX: bool> RangeTest for Rcp<APPROX> {
                     _ => 0.0,
                 }
             } else {
-                unsafe { mem::transmute::<_, f32>(input + mem::transmute::<_, u32>(1.0f32)) }
+                f32::from_bits(input + f32::to_bits(1.0f32))
             }
         } else {
-            unsafe { mem::transmute::<_, f32>(input) }
+            f32::from_bits(input)
         }
     }
 }

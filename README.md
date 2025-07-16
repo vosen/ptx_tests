@@ -18,7 +18,7 @@ Each test case in the suite tests a particular instruction by either:
 
 Print all possible test cases to stdout:
 ```
-cargo +nightly run -r -- -l
+cargo run -r -- -l
 ```
 
 ## Run tests
@@ -26,7 +26,7 @@ cargo +nightly run -r -- -l
 Run tests using CUDA library at `<CUDA_LIB>` path and matching `<REGEX_FILTER>` regex:
 
 ```
-cargo +nightly run -r -- <CUDA_LIB> -f <REGEX_FILTER>
+cargo run -r -- <CUDA_LIB> -f <REGEX_FILTER>
 ```
 
 
@@ -35,7 +35,7 @@ cargo +nightly run -r -- <CUDA_LIB> -f <REGEX_FILTER>
 Print help message:
 
 ```
-cargo +nightly run -r -- -h
+cargo run -r -- -h
 ```
 
 # License

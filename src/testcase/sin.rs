@@ -1,7 +1,6 @@
 use crate::common::{self, flush_to_zero_f32};
 use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 use core::f32;
-use std::mem;
 
 pub static PTX: &str = include_str!("sin.ptx");
 
@@ -32,10 +31,7 @@ impl TestPtx for Sin {
     }
 
     fn args(&self) -> &[&str] {
-        &[
-            "input",
-            "output",
-        ]
+        &["input", "output"]
     }
 }
 
@@ -90,11 +86,10 @@ const RANGE_MIN: f32 = 0f32;
 const RANGE_MAX: f32 = f32::consts::FRAC_PI_2;
 
 impl RangeTest for Sin {
-    const MAX_VALUE: u32 =
-        (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) }) + 36;
+    const MAX_VALUE: u32 = (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 36;
 
     fn generate(&self, input: u32) -> Self::Input {
-        let max_number = unsafe { mem::transmute::<_, u32>(RANGE_MAX) };
+        let max_number = f32::to_bits(RANGE_MAX);
         if input > max_number {
             match input - max_number {
                 1 => f32::NEG_INFINITY,
@@ -107,7 +102,7 @@ impl RangeTest for Sin {
                 _ => 0.0,
             }
         } else {
-            unsafe { mem::transmute::<_, f32>(input + mem::transmute::<_, u32>(RANGE_MIN)) }
+            f32::from_bits(input + f32::to_bits(RANGE_MIN))
         }
     }
 }

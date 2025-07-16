@@ -1,8 +1,7 @@
 use crate::common::{self, flush_to_zero_f32, Rounding};
 use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
-use std::mem;
 
-pub static PTX: &str = include_str!("sqrt.ptx");
+static PTX: &str = include_str!("sqrt.ptx");
 
 pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
@@ -33,7 +32,7 @@ fn sqrt<const APPROX: bool>(rnd: Rounding, ftz: bool) -> TestCase {
     TestCase::new(format!("sqrt_{}{}", mode, ftz), test)
 }
 
-pub struct Sqrt<const APPROX: bool> {
+struct Sqrt<const APPROX: bool> {
     ftz: bool,
     rnd: Rounding,
 }
@@ -48,10 +47,7 @@ impl<const APPROX: bool> TestPtx for Sqrt<APPROX> {
     }
 
     fn args(&self) -> &[&str] {
-        &[
-            "input",
-            "output",
-        ]
+        &["input", "output"]
     }
 }
 
@@ -120,14 +116,14 @@ const RANGE_MAX: f32 = 4f32;
 
 impl<const APPROX: bool> RangeTest for Sqrt<APPROX> {
     const MAX_VALUE: u32 = if APPROX {
-        (unsafe { mem::transmute::<_, u32>(RANGE_MAX) - mem::transmute::<_, u32>(RANGE_MIN) }) + 127
+        (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 127
     } else {
         u32::MAX
     };
 
     fn generate(&self, input: u32) -> Self::Input {
         if APPROX {
-            let max_number = unsafe { mem::transmute::<_, u32>(RANGE_MAX) };
+            let max_number = f32::to_bits(RANGE_MAX);
             if input > max_number {
                 match input - max_number {
                     1 => f32::NEG_INFINITY,
@@ -141,10 +137,10 @@ impl<const APPROX: bool> RangeTest for Sqrt<APPROX> {
                     _ => 0.0,
                 }
             } else {
-                unsafe { mem::transmute::<_, f32>(input + mem::transmute::<_, u32>(RANGE_MIN)) }
+                f32::from_bits(input + f32::to_bits(RANGE_MIN))
             }
         } else {
-            unsafe { mem::transmute::<_, f32>(input) }
+            f32::from_bits(input)
         }
     }
 }
