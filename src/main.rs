@@ -21,10 +21,11 @@ mod testcase;
 
 #[derive(Debug, Clone, Bpaf)]
 #[bpaf(options)]
-pub enum Arguments {
+enum Arguments {
     List {
         /// list all available tests, execute no tests
         #[bpaf(short, long)]
+        #[allow(dead_code)]
         list: (),
     },
     Run {
@@ -36,10 +37,22 @@ pub enum Arguments {
         #[bpaf(long)]
         nvrtc: Option<String>,
 
+        /// number of shards to split the tests into for parallel execution
+        #[bpaf(external, optional)]
+        shards: Option<Shards>,
+
         /// path to CUDA shared library under testing, for example C:\Windows\System32\nvcuda.dll or /usr/lib/x86_64-linux-gnu/libcuda.so
         #[bpaf(positional("cuda"))]
         cuda: String,
     },
+}
+
+#[derive(Debug, Clone, Bpaf)]
+struct Shards {
+    /// index of the shard to run, starting from 0
+    shard_index: usize,
+    /// total number of shards to split the tests into for parallel execution
+    shard_count: usize,
 }
 
 fn main() {
@@ -53,11 +66,23 @@ fn main() {
                 println!("{}", test.name);
             }
         }
-        Arguments::Run { filter, nvrtc, cuda } => {
+        Arguments::Run {
+            filter,
+            nvrtc,
+            cuda,
+            shards,
+        } => {
             if let Some(filter) = filter {
                 let re = Regex::new(&filter).unwrap();
                 tests = tests.into_iter().filter(|t| re.is_match(&t.name)).collect();
             }
+            let tests = if let Some(shards) = shards {
+                let start = shards.shard_index * tests.len() / shards.shard_count;
+                let end = (shards.shard_index + 1) * tests.len() / shards.shard_count;
+                tests.drain(start..end).collect()
+            } else {
+                tests
+            };
 
             let cuda = Cuda::new(cuda);
             let nvrtc = nvrtc.map(Nvrtc::new);
