@@ -8,10 +8,7 @@ pub static PTX: &str = include_str!("lg2.ptx");
 const PRECISION: u32 = 64;
 
 pub fn all_tests() -> Vec<TestCase> {
-    let mut tests = vec![];
-    // we don't test any input or output that could be flushed
-    tests.push(lg2(false));
-    tests
+    vec![lg2(false), lg2(true)]
 }
 
 fn lg2(ftz: bool) -> TestCase {

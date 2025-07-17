@@ -80,6 +80,15 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
                 flush_to_zero_f32(&mut expected, self.ftz);
                 if expected.to_ne_bytes() == output.to_ne_bytes() {
                     Ok(())
+                } else if expected.is_finite() {
+                    let precise_result = sqrt_host(input);
+                    let output_diff = (output as f64 - precise_result).abs();
+                    let expected_diff = (expected as f64 - precise_result).abs();
+                    if output_diff <= expected_diff {
+                        Ok(())
+                    } else {
+                        Err(expected)
+                    }
                 } else {
                     Err(expected)
                 }

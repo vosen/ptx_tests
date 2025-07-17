@@ -64,7 +64,7 @@ impl TestCommon for Sin {
                 || (expected.to_ne_bytes() == output.to_ne_bytes())
             {
                 Ok(())
-            } else {
+            } else if expected.is_finite() {
                 let precise_result = sin_host(input);
                 let output_diff = (output as f64 - precise_result).abs();
                 let expected_diff = (expected as f64 - precise_result).abs();
@@ -73,6 +73,8 @@ impl TestCommon for Sin {
                 } else {
                     Err(expected)
                 }
+            } else {
+                Err(expected)
             }
         } else {
             let precise_result = sin_host(input);
