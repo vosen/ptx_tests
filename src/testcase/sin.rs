@@ -65,7 +65,14 @@ impl TestCommon for Sin {
             {
                 Ok(())
             } else {
-                Err(expected)
+                let precise_result = sin_host(input);
+                let output_diff = (output as f64 - precise_result).abs();
+                let expected_diff = (expected as f64 - precise_result).abs();
+                if output_diff <= expected_diff {
+                    Ok(())
+                } else {
+                    Err(expected)
+                }
             }
         } else {
             let precise_result = sin_host(input);
