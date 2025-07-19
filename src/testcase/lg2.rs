@@ -12,7 +12,7 @@ pub fn all_tests() -> Vec<TestCase> {
 }
 
 fn lg2(ftz: bool) -> TestCase {
-    let mut tolerance = Float::with_val(PRECISION, -22.6f64);
+    let mut tolerance = Float::with_val(PRECISION, -22f64);
     tolerance.exp2_mut();
     let test = make_range(Lg2 { ftz, tolerance });
     let ftz = if ftz { "_ftz" } else { "" };
@@ -81,8 +81,8 @@ impl TestCommon for Lg2 {
     }
 }
 
-const RANGE_MIN: f32 = 1f32;
-const RANGE_MAX: f32 = 4f32;
+const RANGE_MIN: f32 = 0.5f32;
+const RANGE_MAX: f32 = 2f32;
 
 impl RangeTest for Lg2 {
     const MAX_VALUE: u32 = (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 127;
