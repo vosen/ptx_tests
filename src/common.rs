@@ -337,3 +337,13 @@ widening_mul_impl! {
     u16 => u32,
     u32 => u64
 }
+
+pub fn relative_diff(precise_result: f64, gpu_result: f64, epsilon: f64) -> bool {
+    if precise_result.to_bits() == gpu_result.to_bits()
+        || precise_result.is_nan() && gpu_result.is_nan()
+    {
+        return true;
+    }
+    let diff = (precise_result - gpu_result).abs();
+    diff <= epsilon * precise_result
+}

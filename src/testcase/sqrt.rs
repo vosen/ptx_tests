@@ -41,7 +41,13 @@ const APPROX_TOLERANCE: f64 = 0.00000011920928955078125f64; // 2^-23
 
 impl<const APPROX: bool> TestPtx for Sqrt<APPROX> {
     fn body(&self) -> String {
-        let rnd = if APPROX { "approx" } else { self.rnd.as_str() };
+        let rnd = if APPROX {
+            "approx"
+        } else if self.rnd == Rounding::Rn {
+            "approx"
+        } else {
+            self.rnd.as_str()
+        };
         let mode = format!("{}{}", rnd, if self.ftz { ".ftz" } else { "" });
         PTX.replace("<MODE>", &mode)
     }
@@ -64,11 +70,9 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
         fn sqrt_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
-                f if f.is_normal() && f.is_sign_negative() => f32::NAN,
-                f if f.is_subnormal() && f.is_sign_negative() => -0.0,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => -0.0,
+                f if f.to_bits() == (-0.0f32).to_bits() => -0.0,
+                f if f.is_finite() && f.is_sign_negative() => f32::NAN,
                 0.0 => 0.0,
-                f if f.is_subnormal() && f.is_sign_positive() => 0.0,
                 f32::INFINITY => f32::INFINITY,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
@@ -78,27 +82,17 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
         if APPROX {
             if let Some(mut expected) = sqrt_approx_special(input) {
                 flush_to_zero_f32(&mut expected, self.ftz);
-                if expected.to_ne_bytes() == output.to_ne_bytes() {
+                if expected.is_nan() && output.is_nan()
+                    || expected.to_bits() == output.to_bits()
+                {
                     Ok(())
-                } else if expected.is_finite() {
-                    let precise_result = sqrt_host(input);
-                    let output_diff = (output as f64 - precise_result).abs();
-                    let expected_diff = (expected as f64 - precise_result).abs();
-                    if output_diff <= expected_diff {
-                        Ok(())
-                    } else {
-                        Err(expected)
-                    }
                 } else {
                     Err(expected)
                 }
             } else {
-                let precise_result = sqrt_host(input);
-                let mut result_f32 = precise_result as f32;
-                flush_to_zero_f32(&mut result_f32, self.ftz);
-                let precise_output = output as f64;
-                let diff = (precise_output - result_f32 as f64).abs();
-                if diff <= APPROX_TOLERANCE {
+                let mut precise_result = sqrt_host(input);
+                flush_to_zero_f32(&mut precise_result, self.ftz);
+                if common::relative_diff(precise_result, output as f64, APPROX_TOLERANCE) {
                     Ok(())
                 } else {
                     Err(precise_result as f32)
@@ -120,37 +114,11 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
     }
 }
 
-const RANGE_MIN: f32 = 1f32;
-const RANGE_MAX: f32 = 4f32;
-
 impl<const APPROX: bool> RangeTest for Sqrt<APPROX> {
-    const MAX_VALUE: u32 = if APPROX {
-        (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 127
-    } else {
-        u32::MAX
-    };
+    const MAX_VALUE: u32 = u32::MAX;
 
     fn generate(&self, input: u32) -> Self::Input {
-        if APPROX {
-            let max_number = f32::to_bits(RANGE_MAX);
-            if input > max_number {
-                match input - max_number {
-                    1 => f32::NEG_INFINITY,
-                    2 => common::MAX_NEGATIVE_SUBNORMAL,
-                    3 => -0.0,
-                    4 => 0.0,
-                    5 => common::MAX_POSITIVE_SUBNORMAL,
-                    6 => f32::INFINITY,
-                    7 => f32::NAN,
-                    8 => -1.0,
-                    _ => 0.0,
-                }
-            } else {
-                f32::from_bits(input + f32::to_bits(RANGE_MIN))
-            }
-        } else {
-            f32::from_bits(input)
-        }
+        f32::from_bits(input)
     }
 }
 
