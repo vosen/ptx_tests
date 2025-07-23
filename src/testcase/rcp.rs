@@ -1,4 +1,4 @@
-use crate::common::{flush_to_zero_f32, Rounding};
+use crate::common::{self, flush_to_zero_f32, Rounding};
 use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
 
 pub static PTX: &str = include_str!("rcp.ptx");
@@ -64,10 +64,8 @@ impl<const APPROX: bool> TestCommon for Rcp<APPROX> {
         fn rcp_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => -0.0,
-                f if f.is_subnormal() && f.is_sign_negative() => f32::NEG_INFINITY,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => f32::NEG_INFINITY,
+                f if f.to_bits() == (-0.0f32).to_bits() => f32::NEG_INFINITY,
                 0.0 => f32::INFINITY,
-                f if f.is_subnormal() && f.is_sign_positive() => f32::INFINITY,
                 f32::INFINITY => 0.0,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
@@ -77,76 +75,34 @@ impl<const APPROX: bool> TestCommon for Rcp<APPROX> {
         if APPROX {
             if let Some(mut expected) = rcp_approx_special(input) {
                 flush_to_zero_f32(&mut expected, self.ftz);
-                if expected.to_ne_bytes() == output.to_ne_bytes() {
+                if expected.to_bits() == output.to_bits() || expected.is_nan() && output.is_nan() {
                     Ok(())
                 } else {
                     Err(expected)
                 }
             } else {
                 let precise_result = rcp_host(input);
-                let mut result_f32 = precise_result as f32;
-                flush_to_zero_f32(&mut result_f32, self.ftz);
-                let precise_output = output as f64;
-                let diff = (precise_output - result_f32 as f64).abs();
-                if diff <= 2f64.powi(-23) {
-                    Ok(())
-                } else {
-                    Err(precise_result as f32)
-                }
+                let mut precise_result_f32 = precise_result as f32;
+                flush_to_zero_f32(&mut precise_result_f32, self.ftz);
+                common::is_float_equal(precise_result_f32, output, 1)
             }
         } else {
-            let precise_result = rcp_host(input);
-            let mut result = self.rnd.with_f32(|| precise_result as f32);
-            flush_to_zero_f32(&mut result, self.ftz);
-            if result.is_nan() && output.is_nan() {
+            let mut precise_result = rcp_host(input);
+            flush_to_zero_f32(&mut precise_result, self.ftz);
+            let result = self.rnd.with_f32(|| precise_result as f32);
+            if result.is_nan() && output.is_nan() || result.to_bits() == output.to_bits() {
                 Ok(())
             } else {
-                if result.to_ne_bytes() == output.to_ne_bytes() {
-                    Ok(())
-                } else {
-                    // HACK: Those two values with those two particular rounding modes
-                    // disagree between CPU and GPU
-                    match (self.rnd, self.ftz, input, output) {
-                        (Rounding::Rm, true, -8.50706e37, -0.0) => return Ok(()),
-                        (Rounding::Rp, true, 8.50706e37, 0.0) => return Ok(()),
-                        _ => {}
-                    }
-                    Err(result)
-                }
+                Err(result)
             }
         }
     }
 }
 
-const MAX_NEGATIVE_SUBNORMAL: f32 = f32::from_bits(0x807FFFFFu32);
-const MAX_POSITIVE_SUBNORMAL: f32 = f32::from_bits(0x007FFFFFu32);
-
 impl<const APPROX: bool> RangeTest for Rcp<APPROX> {
-    const MAX_VALUE: u32 = if APPROX {
-        (f32::to_bits(2.0f32) - f32::to_bits(1.0f32)) + 127
-    } else {
-        u32::MAX
-    };
+    const MAX_VALUE: u32 = u32::MAX;
 
     fn generate(&self, input: u32) -> Self::Input {
-        if APPROX {
-            let max_number = f32::to_bits(2.0f32);
-            if input > max_number {
-                match input - max_number {
-                    1 => f32::NEG_INFINITY,
-                    2 => MAX_NEGATIVE_SUBNORMAL,
-                    3 => -0.0,
-                    4 => 0.0,
-                    5 => MAX_POSITIVE_SUBNORMAL,
-                    6 => f32::INFINITY,
-                    7 => f32::NAN,
-                    _ => 0.0,
-                }
-            } else {
-                f32::from_bits(input + f32::to_bits(1.0f32))
-            }
-        } else {
-            f32::from_bits(input)
-        }
+        f32::from_bits(input)
     }
 }

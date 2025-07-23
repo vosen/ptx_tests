@@ -75,8 +75,8 @@ impl TestCommon for DivF32 {
             None => exact_f64 as f32,
         };
         match self.variant {
-            DivVariant::Full => is_float_equal(exact_f32, output, 2),
-            DivVariant::Rnd(_) => is_float_equal(exact_f32, output, 0),
+            DivVariant::Full => common::is_float_equal(exact_f32, output, 2),
+            DivVariant::Rnd(_) => common::is_float_equal(exact_f32, output, 0),
             DivVariant::Approx => is_approx_equal(a, b, exact_f32, output),
         }
     }
@@ -100,7 +100,7 @@ fn is_approx_equal(a: f32, b: f32, exact_f32: f32, gpu_output: f32) -> Result<()
         // so we just accept anything
         Ok(())
     } else if b_abs <= upper_bound {
-        is_float_equal(exact_f32, gpu_output, 2)
+        common::is_float_equal(exact_f32, gpu_output, 2)
     } else {
         if a.is_infinite() {
             if gpu_output.is_nan() {
@@ -115,19 +115,6 @@ fn is_approx_equal(a: f32, b: f32, exact_f32: f32, gpu_output: f32) -> Result<()
                 Err(0.0)
             }
         }
-    }
-}
-
-fn is_float_equal(exact_f32: f32, output: f32, expected_ulp: u32) -> Result<(), f32> {
-    if exact_f32.is_nan() && output.is_nan() {
-        return Ok(());
-    }
-    let exact_bits = exact_f32.to_bits();
-    let ulp = exact_bits.abs_diff(output.to_bits());
-    if ulp <= expected_ulp {
-        Ok(())
-    } else {
-        Err(exact_f32)
     }
 }
 

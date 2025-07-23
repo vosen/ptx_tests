@@ -361,3 +361,16 @@ pub fn is_within_sincos_bounds(input: f32, diff: f64) -> bool {
         true
     }
 }
+
+pub fn is_float_equal(exact_f32: f32, output: f32, expected_ulp: u32) -> Result<(), f32> {
+    if exact_f32.is_nan() && output.is_nan() {
+        return Ok(());
+    }
+    let exact_bits = exact_f32.to_bits();
+    let ulp = exact_bits.abs_diff(output.to_bits());
+    if ulp <= expected_ulp {
+        Ok(())
+    } else {
+        Err(exact_f32)
+    }
+}
