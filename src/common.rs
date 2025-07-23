@@ -339,6 +339,16 @@ widening_mul_impl! {
     u32 => u64
 }
 
+pub fn absolute_diff(precise_result: f64, gpu_result: f64, epsilon: f64) -> bool {
+    if precise_result.to_bits() == gpu_result.to_bits()
+        || precise_result.is_nan() && gpu_result.is_nan()
+    {
+        return true;
+    }
+    let diff = (precise_result - gpu_result).abs();
+    diff <= epsilon
+}
+
 pub fn relative_diff(precise_result: f64, gpu_result: f64, epsilon: f64) -> bool {
     if precise_result.to_bits() == gpu_result.to_bits()
         || precise_result.is_nan() && gpu_result.is_nan()
@@ -346,7 +356,7 @@ pub fn relative_diff(precise_result: f64, gpu_result: f64, epsilon: f64) -> bool
         return true;
     }
     let diff = (precise_result - gpu_result).abs();
-    diff <= epsilon * precise_result
+    diff <= (epsilon * precise_result).abs()
 }
 
 pub fn is_within_sincos_bounds(input: f32, diff: f64) -> bool {

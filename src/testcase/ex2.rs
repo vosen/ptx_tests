@@ -39,11 +39,11 @@ impl TestCommon for Ex2 {
         fn ex2_approx_special(input: f32) -> Option<f32> {
             //These special cases are defined in PTX documentation
             Some(match input {
-                x if x.is_nan() => f32::NAN,
                 x if x == f32::NEG_INFINITY => 0.0,
-                x if x == f32::INFINITY => f32::INFINITY,
                 x if x.to_bits() == (-0.0f32).to_bits() => 1.0,
-                x if x.to_bits() == (0.0f32).to_bits() => 1.0,
+                0.0 => 1.0,
+                x if x == f32::INFINITY => f32::INFINITY,
+                x if x.is_nan() => f32::NAN,
                 _ => return None,
             })
         }
