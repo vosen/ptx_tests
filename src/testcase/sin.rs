@@ -1,8 +1,8 @@
 use crate::common::{self, flush_to_zero_f32};
 use crate::test::{make_range, RangeTest, TestCase, TestCommon, TestPtx};
-use core::f32;
+use std::f32;
 
-pub static PTX: &str = include_str!("sin.ptx");
+static PTX: &str = include_str!("sin.ptx");
 
 pub fn all_tests() -> Vec<TestCase> {
     let mut tests = vec![];
@@ -18,11 +18,9 @@ fn sin(ftz: bool) -> TestCase {
     TestCase::new(format!("sin_approx{}", ftz), test)
 }
 
-pub struct Sin {
+struct Sin {
     ftz: bool,
 }
-
-const APPROX_TOLERANCE: f64 = 0.00000051106141211332948885584179164092160363501768f64; // 2^-20.9
 
 impl TestPtx for Sin {
     fn body(&self) -> String {
@@ -48,10 +46,8 @@ impl TestCommon for Sin {
         fn sin_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
-                f if f.is_subnormal() && f.is_sign_negative() => -0.0,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => -0.0,
+                f if f.to_bits() == (-0.0f32).to_bits() => -0.0,
                 0.0 => 0.0,
-                f if f.is_subnormal() && f.is_sign_positive() => 0.0,
                 f32::INFINITY => f32::NAN,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
@@ -60,29 +56,16 @@ impl TestCommon for Sin {
         flush_to_zero_f32(&mut input, self.ftz);
         if let Some(mut expected) = sin_approx_special(input) {
             flush_to_zero_f32(&mut expected, self.ftz);
-            if (expected.is_nan() && output.is_nan())
-                || (expected.to_ne_bytes() == output.to_ne_bytes())
-            {
+            if (expected.is_nan() && output.is_nan()) || (expected.to_bits() == output.to_bits()) {
                 Ok(())
-            } else if expected.is_finite() {
-                let precise_result = sin_host(input);
-                let output_diff = (output as f64 - precise_result).abs();
-                let expected_diff = (expected as f64 - precise_result).abs();
-                if output_diff <= expected_diff {
-                    Ok(())
-                } else {
-                    Err(expected)
-                }
             } else {
                 Err(expected)
             }
         } else {
-            let precise_result = sin_host(input);
-            let mut result_f32 = precise_result as f32;
-            flush_to_zero_f32(&mut result_f32, self.ftz);
-            let precise_output = output as f64;
-            let diff = (precise_output - result_f32 as f64).abs();
-            if diff <= APPROX_TOLERANCE {
+            let mut precise_result = sin_host(input);
+            flush_to_zero_f32(&mut precise_result, self.ftz);
+            let diff = (precise_result - output as f64).abs();
+            if common::is_within_sincos_bounds(input, diff) {
                 Ok(())
             } else {
                 Err(precise_result as f32)
@@ -91,28 +74,11 @@ impl TestCommon for Sin {
     }
 }
 
-const RANGE_MIN: f32 = 0f32;
-const RANGE_MAX: f32 = f32::consts::FRAC_PI_2;
-
 impl RangeTest for Sin {
-    const MAX_VALUE: u32 = (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 36;
+    const MAX_VALUE: u32 = u32::MAX;
 
     fn generate(&self, input: u32) -> Self::Input {
-        let max_number = f32::to_bits(RANGE_MAX);
-        if input > max_number {
-            match input - max_number {
-                1 => f32::NEG_INFINITY,
-                2 => common::MAX_NEGATIVE_SUBNORMAL,
-                3 => -0.0,
-                4 => 0.0,
-                5 => common::MAX_POSITIVE_SUBNORMAL,
-                6 => f32::INFINITY,
-                7 => f32::NAN,
-                _ => 0.0,
-            }
-        } else {
-            f32::from_bits(input + f32::to_bits(RANGE_MIN))
-        }
+        f32::from_bits(input)
     }
 }
 

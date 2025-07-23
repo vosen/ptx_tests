@@ -18,11 +18,9 @@ fn cos(ftz: bool) -> TestCase {
     TestCase::new(format!("cos_approx{}", ftz), test)
 }
 
-pub struct Cos {
+struct Cos {
     ftz: bool,
 }
-
-const APPROX_TOLERANCE: f64 = 0.00000051106141211332948885584179164092160363501768f64; // 2^-20.9
 
 impl TestPtx for Cos {
     fn body(&self) -> String {
@@ -48,10 +46,8 @@ impl TestCommon for Cos {
         fn cos_approx_special(input: f32) -> Option<f32> {
             Some(match input {
                 f32::NEG_INFINITY => f32::NAN,
-                f if f.is_subnormal() && f.is_sign_negative() => 1.0,
-                f if f.to_ne_bytes() == (-0.0f32).to_ne_bytes() => 1.0,
+                f if f.to_bits() == (-0.0f32).to_bits() => 1.0,
                 0.0 => 1.0,
-                f if f.is_subnormal() && f.is_sign_positive() => 1.0,
                 f32::INFINITY => f32::NAN,
                 f if f.is_nan() => f32::NAN,
                 _ => return None,
@@ -68,12 +64,10 @@ impl TestCommon for Cos {
                 Err(expected)
             }
         } else {
-            let precise_result = cos_host(input);
-            let mut result_f32 = precise_result as f32;
-            flush_to_zero_f32(&mut result_f32, self.ftz);
-            let precise_output = output as f64;
-            let diff = (precise_output - result_f32 as f64).abs();
-            if diff <= APPROX_TOLERANCE {
+            let mut precise_result = cos_host(input);
+            flush_to_zero_f32(&mut precise_result, self.ftz);
+            let diff = (precise_result - output as f64).abs();
+            if common::is_within_sincos_bounds(input, diff) {
                 Ok(())
             } else {
                 Err(precise_result as f32)
@@ -82,29 +76,11 @@ impl TestCommon for Cos {
     }
 }
 
-const RANGE_MIN: f32 = 0f32;
-const RANGE_MAX: f32 = f32::consts::FRAC_PI_2;
-
 impl RangeTest for Cos {
-    const MAX_VALUE: u32 = (f32::to_bits(RANGE_MAX) - f32::to_bits(RANGE_MIN)) + 36;
+    const MAX_VALUE: u32 = u32::MAX;
 
     fn generate(&self, input: u32) -> Self::Input {
-        let max_number = f32::to_bits(RANGE_MAX);
-        if input > max_number {
-            match input - max_number {
-                1 => f32::NEG_INFINITY,
-                2 => common::MAX_NEGATIVE_SUBNORMAL,
-                3 => -0.0,
-                4 => 0.0,
-                5 => common::MAX_POSITIVE_SUBNORMAL,
-                6 => f32::INFINITY,
-                7 => f32::NAN,
-                8 => -1.0,
-                _ => 0.0,
-            }
-        } else {
-            f32::from_bits(input + f32::to_bits(RANGE_MIN))
-        }
+        f32::from_bits(input)
     }
 }
 

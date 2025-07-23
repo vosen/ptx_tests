@@ -44,7 +44,7 @@ impl<const APPROX: bool> TestPtx for Sqrt<APPROX> {
         let rnd = if APPROX {
             "approx"
         } else if self.rnd == Rounding::Rn {
-            "approx"
+            self.rnd.as_str()
         } else {
             self.rnd.as_str()
         };
@@ -82,9 +82,7 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
         if APPROX {
             if let Some(mut expected) = sqrt_approx_special(input) {
                 flush_to_zero_f32(&mut expected, self.ftz);
-                if expected.is_nan() && output.is_nan()
-                    || expected.to_bits() == output.to_bits()
-                {
+                if expected.is_nan() && output.is_nan() || expected.to_bits() == output.to_bits() {
                     Ok(())
                 } else {
                     Err(expected)
@@ -104,7 +102,7 @@ impl<const APPROX: bool> TestCommon for Sqrt<APPROX> {
             if result.is_nan() && output.is_nan() {
                 Ok(())
             } else {
-                if result.to_ne_bytes() == output.to_ne_bytes() {
+                if result.to_bits() == output.to_bits() {
                     Ok(())
                 } else {
                     Err(result)
@@ -154,6 +152,6 @@ mod os {
 
     pub fn sqrt_rnd(input: f32, rnd: Rounding) -> f32 {
         let precise_result = super::sqrt_host(input);
-        rnd.with(|| precise_result as f32)
+        rnd.with_f32(|| precise_result as f32)
     }
 }
