@@ -15,14 +15,14 @@ mad.lo.u64      input1_addr, global_id_64, 4, input1_addr;
 mad.lo.u64      input2_addr, global_id_64, 4, input2_addr;
 mad.lo.u64      output_addr, global_id_64, 4, output_addr;
 
-.reg .<TYPE> a;
-.reg .<TYPE> b;
-.reg .<TYPE> c;
-.reg .<TYPE> result;
+.reg .b32 a;
+.reg .b32 b;
+.reg .b32 c;
+.reg .b32 result;
 
-ld.<TYPE> a, [input0_addr];
-ld.<TYPE> b, [input1_addr];
-ld.<TYPE> c, [input2_addr];
+ld.b32 a, [input0_addr];
+ld.b32 b, [input1_addr];
+ld.b32 c, [input2_addr];
 
 <DPINST> result, a, b, c;
-st.<TYPE> [output_addr], result;
+st.b32 [output_addr], result;
