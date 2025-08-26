@@ -9,14 +9,13 @@ mov.u32         ctaid_x, %ctaid.x;
 mov.u32         ntid_x, %ntid.x;
 mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
 
-mad.lo.u64      input_addr, global_id_64, 4, input_addr;
-mad.lo.u64      output_addr, global_id_64, 2, output_addr;
+mad.lo.u64      input_addr, global_id_64, 2, input_addr;
+mad.lo.u64      output_addr, global_id_64, 4, output_addr;
 
-.reg .f32       a;
-.reg .f32       b;
-.reg .b16       result;
+.reg .b16       a;
+.reg .b32       result;
 
-ld.f32          a, [input_addr];
+ld.b16          a, [input_addr];
 
-cvt.rn.satfinite.<OUTPUT>.f32 result, a, a;
-st.b16          [output_addr], result;
+cvt.rn.f16x2.<INPUT> result, a;
+st.b32          [output_addr], result;

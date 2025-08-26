@@ -11,6 +11,7 @@ mod brev;
 mod cos;
 mod cvt;
 mod cvt_rn_satfinite_f8x2_f32;
+mod cvt_rn_f16x2_f8x2type;
 mod div;
 mod fma_f;
 mod dot_product;
@@ -210,6 +211,7 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(cos::all_tests());
     tests.extend(cvt::all_tests());
     tests.extend(cvt_rn_satfinite_f8x2_f32::all_tests());
+    tests.extend(cvt_rn_f16x2_f8x2type::all_tests());
     tests.extend(div::all_tests());
     tests.extend(fma_f::all_tests());
     tests.extend(dot_product::all_tests());
