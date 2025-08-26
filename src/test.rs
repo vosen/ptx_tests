@@ -549,6 +549,11 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
     let mut outputs = vec![Test::Output::zero(); memory_batch_size / element_size];
+
+    let mut first_error = None;
+    let mut total_cases = 0;
+    let mut passed_cases = 0;
+
     for iteration in 0..iterations {
         assert_eq!(Test::Output::COMPONENTS, 1);
         let memory_batch_size = if iteration == iterations - 1 {
@@ -609,16 +614,25 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
         for (i, output) in outputs.iter().copied().enumerate() {
             let input = Test::Input::read(&inputs, i);
             if let Err(expected) = t.host_verify(input, output) {
-                return Err(TestError::ResultMismatch {
-                    input: input.debug_rich(),
-                    output: output.debug_rich(),
-                    expected: expected.debug_rich(),
-                });
+                first_error.get_or_insert((input, output, expected));
+            } else {
+                passed_cases += 1;
             }
+            total_cases += 1;
         }
     }
 
-    Ok(())
+    if let Some((input, output, expected)) = first_error {
+        Err(TestError::ResultMismatch {
+            input: input.debug_rich(),
+            output: output.debug_rich(),
+            expected: expected.debug_rich(),
+            total_cases,
+            passed_cases,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 fn cuda_malloc<'a>(cuda: &'a Cuda, size: usize) -> DevicePtr<'a> {
@@ -656,6 +670,11 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
         next_multiple_of(required_memory / iterations, GROUP_SIZE * element_size);
     let mut inputs = vec![Vec::new(); Test::Input::COMPONENTS];
     let mut outputs = vec![Test::Output::zero(); memory_batch_size / element_size];
+
+    let mut first_error = None;
+    let mut total_cases = 0;
+    let mut passed_cases = 0;
+
     for iteration in 0..iterations {
         assert_eq!(Test::Output::COMPONENTS, 1);
         let elment_start = iteration * memory_batch_size / element_size;
@@ -718,16 +737,25 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
         for (i, output) in outputs.iter().copied().enumerate() {
             let input = Test::Input::read(&inputs, i);
             if let Err(expected) = t.host_verify(input, output) {
-                return Err(TestError::ResultMismatch {
-                    input: input.debug_rich(),
-                    output: output.debug_rich(),
-                    expected: expected.debug_rich(),
-                });
+                first_error.get_or_insert((input, output, expected));
+            } else {
+                passed_cases += 1;
             }
+            total_cases += 1;
         }
     }
 
-    Ok(())
+    if let Some((input, output, expected)) = first_error {
+        Err(TestError::ResultMismatch {
+            input: input.debug_rich(),
+            output: output.debug_rich(),
+            expected: expected.debug_rich(),
+            total_cases,
+            passed_cases,
+        })
+    } else {
+        Ok(())
+    }
 }
 
 pub type TestFunction = Box<dyn FnOnce(&dyn TestContext) -> Result<(), TestError>>;
@@ -780,5 +808,7 @@ pub enum TestError {
         input: String,
         output: String,
         expected: String,
+        total_cases: usize,
+        passed_cases: usize,
     },
 }
