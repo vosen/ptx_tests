@@ -1,3 +1,4 @@
+use float8::{F8E4M3, F8E5M2};
 use half::f16;
 use num::{Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
@@ -196,6 +197,40 @@ impl OnDevice for i64 {
         }
     }
 }
+impl OnDevice for F8E4M3 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].push(self.to_bits());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for F8E5M2 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].push(self.to_bits());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
 impl OnDevice for f16 {
     const COMPONENTS: usize = 1;
 
@@ -349,6 +384,18 @@ impl_debug_rich!(i32);
 impl_debug_rich!(u64);
 impl_debug_rich!(i64);
 
+impl DebugRich for F8E4M3 {
+    fn debug_rich(&self) -> String {
+        format!("{:#066b} {self:#X} {self:.24}", self.to_bits())
+    }
+}
+
+impl DebugRich for F8E5M2 {
+    fn debug_rich(&self) -> String {
+        format!("{:#066b} {self:#X} {self:.24}", self.to_bits())
+    }
+}
+
 impl DebugRich for f16 {
     fn debug_rich(&self) -> String {
         format!("{self:#066b} {self:#X} {self:.24}")
@@ -469,6 +516,24 @@ impl PtxScalar for u64 {
 impl PtxScalar for i64 {
     fn name() -> &'static str {
         "s64"
+    }
+}
+
+impl PtxScalar for F8E4M3 {
+    fn name() -> &'static str {
+        "e4m3"
+    }
+    fn float() -> bool {
+        true
+    }
+}
+
+impl PtxScalar for F8E5M2 {
+    fn name() -> &'static str {
+        "e5m2"
+    }
+    fn float() -> bool {
+        true
     }
 }
 

@@ -13,6 +13,7 @@ argh = "0.1.12"
 bpaf = { version = "0.9.14", features = ["derive"] }
 regex = "1.11.0"
 half = { version = "2.4.1", features = ["num-traits"] }
+float8 = { version = "0.4.2", features = ["num-traits"] }
 
 [target.'cfg(not(windows))'.dependencies.rug]
 default-features = false
