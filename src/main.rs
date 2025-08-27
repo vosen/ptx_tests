@@ -122,9 +122,18 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
             Ok(()) => println!("OK"),
             Err(CompilationFail { message }) => println!("FAIL - Compilation failed:\n{message}"),
             Err(CompilationSuccess { name }) => println!("FAIL - Compilation mismatch, didn't expect '{name}' to compile"),
-            Err(ResultMismatch { input, output, expected }) => println!(
-                "FAIL - with input {input}\n    computed on GPU: {output}\n    computed on CPU: {expected}"
-            ),
+            Err(ResultMismatch {
+                input,
+                output,
+                expected,
+                total_cases,
+                passed_cases,
+            }) => {
+                let percent = (passed_cases as f32 / total_cases as f32) * 100f32;
+                println!(
+                    "FAIL - with input {input}\n    computed on GPU: {output}\n    computed on CPU: {expected}\n    passed: {passed_cases} out of {total_cases} ({percent}%)"
+                )
+            }
         }
     }
 
