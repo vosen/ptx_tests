@@ -593,7 +593,7 @@ impl Fp8 for F8E4M3 {
         self.to_f64() as f16
     }
     fn is_nan_correct(&self) -> bool {
-        return (self.to_bits() >> 3) & 0b1111 == 0b1111;
+        self.is_nan()
     }
 }
 
@@ -611,7 +611,7 @@ impl Fp8 for F8E5M2 {
         self.to_f64() as f16
     }
     fn is_nan_correct(&self) -> bool {
-        return (self.to_bits() >> 2) & 0b11111 == 0b11111;
+        matches!(self.to_bits() & 0b01111111, 0b01111101 | 0b01111110 | 0b01111111)
     }
 }
 
