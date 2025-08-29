@@ -10,6 +10,8 @@ mod bfi;
 mod brev;
 mod cos;
 mod cvt;
+mod cvt_rn_satfinite_f8x2_f32;
+mod cvt_rn_f16x2_f8x2type;
 mod div;
 mod fma_f;
 mod dot_product;
@@ -47,8 +49,8 @@ pub struct TestFixture<L> {
 }
 
 const PTX_HEADER: &'_ str = "
-    .version 7.0
-    .target sm_80
+    .version 7.8
+    .target sm_90
     .address_size 64
 ";
 
@@ -146,7 +148,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         unsafe { nvrtc.nvrtcCreateProgram(&mut program, source_cuda_c.as_ptr() as _, ptr::null() as _, 0, ptr::null(), ptr::null()) }.unwrap();
 
         let options = [
-            "-arch=sm_80",
+            "-arch=sm_90",
         ].map(|opt| CString::new(opt).unwrap());
         let options_c: Vec<_> = options.iter().map(|opt| opt.as_c_str().as_ptr()).collect();
 
@@ -208,6 +210,8 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(brev::all_tests());
     tests.extend(cos::all_tests());
     tests.extend(cvt::all_tests());
+    tests.extend(cvt_rn_satfinite_f8x2_f32::all_tests());
+    tests.extend(cvt_rn_f16x2_f8x2type::all_tests());
     tests.extend(div::all_tests());
     tests.extend(fma_f::all_tests());
     tests.extend(dot_product::all_tests());

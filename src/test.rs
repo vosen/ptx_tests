@@ -1,4 +1,4 @@
-use half::f16;
+use float8::{F8E4M3, F8E5M2};
 use num::{Bounded, Num, PrimInt, Zero};
 use rand::{Rng, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -196,7 +196,41 @@ impl OnDevice for i64 {
         }
     }
 }
-impl OnDevice for f16 {
+impl OnDevice for F8E4M3 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].push(self.to_bits());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for F8E5M2 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].push(self.to_bits());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+impl OnDevice for half::f16 {
     const COMPONENTS: usize = 1;
 
     fn write(self, buffers: &mut [Vec<u8>]) {
@@ -349,7 +383,25 @@ impl_debug_rich!(i32);
 impl_debug_rich!(u64);
 impl_debug_rich!(i64);
 
+impl DebugRich for F8E4M3 {
+    fn debug_rich(&self) -> String {
+        format!("{:#066b} {self:#X} {self:.24}", self.to_bits())
+    }
+}
+
+impl DebugRich for F8E5M2 {
+    fn debug_rich(&self) -> String {
+        format!("{:#066b} {self:#X} {self:.24}", self.to_bits())
+    }
+}
+
 impl DebugRich for f16 {
+    fn debug_rich(&self) -> String {
+        format!("{0:#066b} {0:#X} {self:.24}", self.to_bits())
+    }
+}
+
+impl DebugRich for half::f16 {
     fn debug_rich(&self) -> String {
         format!("{self:#066b} {self:#X} {self:.24}")
     }
@@ -472,7 +524,25 @@ impl PtxScalar for i64 {
     }
 }
 
-impl PtxScalar for f16 {
+impl PtxScalar for F8E4M3 {
+    fn name() -> &'static str {
+        "e4m3"
+    }
+    fn float() -> bool {
+        true
+    }
+}
+
+impl PtxScalar for F8E5M2 {
+    fn name() -> &'static str {
+        "e5m2"
+    }
+    fn float() -> bool {
+        true
+    }
+}
+
+impl PtxScalar for half::f16 {
     fn name() -> &'static str {
         "f16"
     }
@@ -496,6 +566,52 @@ impl PtxScalar for f64 {
     }
     fn float() -> bool {
         true
+    }
+}
+
+pub trait Fp8: PtxScalar + num::Float {
+    fn from_f32(x: f32) -> Self;
+    fn from_bits(bits: u8) -> Self;
+    fn to_bits(&self) -> u8;
+    fn to_f16(&self) -> f16;
+    // This is necessary because float8 is_nan hardcodes a few NaN values and returns "false" for
+    // others.
+    fn is_nan_correct(&self) -> bool;
+}
+
+impl Fp8 for F8E4M3 {
+    fn from_f32(x: f32) -> Self {
+        Self::from_f32(x)
+    }
+    fn from_bits(bits: u8) -> Self {
+        Self::from_bits(bits)
+    }
+    fn to_bits(&self) -> u8 {
+        self.to_bits()
+    }
+    fn to_f16(&self) -> f16 {
+        self.to_f64() as f16
+    }
+    fn is_nan_correct(&self) -> bool {
+        self.is_nan()
+    }
+}
+
+impl Fp8 for F8E5M2 {
+    fn from_f32(x: f32) -> Self {
+        Self::from_f32(x)
+    }
+    fn from_bits(bits: u8) -> Self {
+        Self::from_bits(bits)
+    }
+    fn to_bits(&self) -> u8 {
+        self.to_bits()
+    }
+    fn to_f16(&self) -> f16 {
+        self.to_f64() as f16
+    }
+    fn is_nan_correct(&self) -> bool {
+        matches!(self.to_bits() & 0b01111111, 0b01111101 | 0b01111110 | 0b01111111)
     }
 }
 
