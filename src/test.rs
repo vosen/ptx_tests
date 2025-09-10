@@ -649,7 +649,8 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
 
     let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }.unwrap();
+    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }
+        .map_err(|_| TestError::MissingRunFunction)?;
 
     let mut rng = XorShiftRng::seed_from_u64(SEED);
     let mut free_memory = 0;
@@ -901,8 +902,8 @@ impl TestCase {
         let test = Box::new(move |ctx: &dyn TestContext| {
             for (name, test) in tests {
                 match test(ctx) {
-                    Err(CompilationFail { .. }) => {}
-                    Ok(()) | Err(ResultMismatch { .. } | MissingRunFunction) => return Err(CompilationSuccess { name }),
+                    Err(CompilationFail { .. } | MissingRunFunction) => {}
+                    Ok(()) | Err(ResultMismatch { .. }) => return Err(CompilationSuccess { name }),
                     Err(CompilationSuccess { .. }) => {
                         unreachable!("tests may not report CompilationSuccess")
                     }
