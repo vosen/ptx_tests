@@ -766,7 +766,8 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
 
     let module = load_module(ctx, &t)?;
     let mut kernel = ptr::null_mut();
-    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }.unwrap();
+    unsafe { cuda.cuModuleGetFunction(&mut kernel, module.value, c"run".as_ptr()) }
+        .map_err(|_| TestError::MissingRunFunction)?;
 
     let mut free_memory = 0;
     let mut total_memory = 0;
@@ -901,7 +902,7 @@ impl TestCase {
             for (name, test) in tests {
                 match test(ctx) {
                     Err(CompilationFail { .. }) => {}
-                    Ok(()) | Err(ResultMismatch { .. }) => return Err(CompilationSuccess { name }),
+                    Ok(()) | Err(ResultMismatch { .. } | MissingRunFunction) => return Err(CompilationSuccess { name }),
                     Err(CompilationSuccess { .. }) => {
                         unreachable!("tests may not report CompilationSuccess")
                     }
@@ -927,4 +928,6 @@ pub enum TestError {
         total_cases: usize,
         passed_cases: usize,
     },
+    /// Used when `cuModuleGetFunction` fails
+    MissingRunFunction
 }

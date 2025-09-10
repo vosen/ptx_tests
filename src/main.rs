@@ -134,6 +134,7 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
                     "FAIL - with input {input}\n    computed on GPU: {output}\n    computed on CPU: {expected}\n    passed: {passed_cases} out of {total_cases} ({percent}%)"
                 )
             }
+            Err(MissingRunFunction) => println!("FAIL - Missing run function")
         }
     }
 
