@@ -41,6 +41,9 @@ enum Arguments {
         #[bpaf(external, optional)]
         shards: Option<Shards>,
 
+        /// fail on the first test failure
+        fail_fast: bool,
+
         /// path to CUDA shared library under testing, for example C:\Windows\System32\nvcuda.dll or /usr/lib/x86_64-linux-gnu/libcuda.so
         #[bpaf(positional("cuda"))]
         cuda: String,
@@ -71,6 +74,7 @@ fn main() {
             nvrtc,
             cuda,
             shards,
+            fail_fast,
         } => {
             if let Some(filter) = filter {
                 let re = Regex::new(&filter).unwrap();
@@ -89,10 +93,10 @@ fn main() {
 
             let failures = if let Some(nvrtc) = nvrtc {
                 let libs = (cuda, nvrtc);
-                run(tests, TestFixture { libs })
+                run(tests, TestFixture { libs }, fail_fast)
             } else {
                 let libs = (cuda,);
-                run(tests, TestFixture { libs })
+                run(tests, TestFixture { libs }, fail_fast)
             };
 
             std::process::exit(failures);
@@ -100,7 +104,7 @@ fn main() {
     }
 }
 
-fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
+fn run(tests: Vec<TestCase>, ctx: impl TestContext, fail_fast: bool) -> i32 {
     let cuda = ctx.cuda();
 
     let mut failures = 0;
@@ -112,7 +116,7 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
     for t in tests {
         use TestError::*;
 
-        let result = (t.test)(&ctx);
+        let result = (t.test)(&ctx, fail_fast);
         if result.is_err() {
             failures += 1;
         }
@@ -121,7 +125,9 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
         match result {
             Ok(()) => println!("OK"),
             Err(CompilationFail { message }) => println!("FAIL - Compilation failed:\n{message}"),
-            Err(CompilationSuccess { name }) => println!("FAIL - Compilation mismatch, didn't expect '{name}' to compile"),
+            Err(CompilationSuccess { name }) => {
+                println!("FAIL - Compilation mismatch, didn't expect '{name}' to compile")
+            }
             Err(ResultMismatch {
                 input,
                 output,
@@ -134,7 +140,7 @@ fn run(tests: Vec<TestCase>, ctx: impl TestContext) -> i32 {
                     "FAIL - with input {input}\n    computed on GPU: {output}\n    computed on CPU: {expected}\n    passed: {passed_cases} out of {total_cases} ({percent}%)"
                 )
             }
-            Err(MissingRunFunction) => println!("FAIL - Missing run function")
+            Err(MissingRunFunction) => println!("FAIL - Missing run function"),
         }
     }
 

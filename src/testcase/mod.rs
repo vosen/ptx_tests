@@ -1,6 +1,14 @@
-use std::{alloc::{alloc, dealloc, Layout}, ffi::{CStr, CString}, ptr};
+use std::{
+    alloc::{alloc, dealloc, Layout},
+    ffi::{CStr, CString},
+    ptr,
+};
 
-use crate::{cuda::Cuda, nvrtc::Nvrtc, test::{TestCase, TestPtx}};
+use crate::{
+    cuda::Cuda,
+    nvrtc::Nvrtc,
+    test::{TestCase, TestPtx},
+};
 
 mod abs;
 mod add;
@@ -10,24 +18,26 @@ mod bfi;
 mod brev;
 mod cos;
 mod cvt;
-mod cvt_rn_satfinite_f8x2_f32;
+mod cvt_pack;
 mod cvt_rn_f16x2_f8x2type;
+mod cvt_rn_satfinite_f8x2_f32;
 mod div;
-mod fma_f;
 mod dot_product;
+mod ex2;
+mod fma_f;
 mod lg2;
-mod minmax;
 mod mad;
-mod mul24;
-mod prmt;
-mod neg;
+mod minmax;
 mod mul;
+mod mul24;
 mod mul_f;
+mod neg;
+mod prmt;
 mod rcp;
 mod rsqrt;
 mod sad;
-mod shf;
 mod set;
+mod shf;
 mod shift;
 mod sin;
 mod sqrt;
@@ -36,8 +46,6 @@ mod sub_f;
 mod tanh;
 mod testp;
 mod vshr;
-mod ex2;
-
 
 pub trait TestContext {
     fn cuda(&self) -> &Cuda;
@@ -71,7 +79,10 @@ impl TestContext for TestFixture<(Cuda,)> {
             let mut text = String::new();
             for arg in args {
                 text.push_str(&format!(".reg .u64    {name}_addr;\n", name = arg));
-                text.push_str(&format!("ld.param.u64 {name}_addr, [{name}];\n", name = arg));
+                text.push_str(&format!(
+                    "ld.param.u64 {name}_addr, [{name}];\n",
+                    name = arg
+                ));
             }
             text
         }
@@ -82,7 +93,8 @@ impl TestContext for TestFixture<(Cuda,)> {
             fmt_ptx_signature(ptx.args()),
             fmt_ptx_params_load(ptx.args()),
             ptx.body(),
-        )).unwrap())
+        ))
+        .unwrap())
     }
 }
 
@@ -94,7 +106,10 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
     fn prepare_test_source(&self, ptx: &dyn TestPtx) -> Result<CString, String> {
         /// Generate CUDA test function signature.
         fn fmt_cuda_signature(args: &[&str]) -> String {
-            let args: Vec<_> = args.iter().map(|a| format!("unsigned long long * {}", a)).collect();
+            let args: Vec<_> = args
+                .iter()
+                .map(|a| format!("unsigned long long * {}", a))
+                .collect();
             format!("extern \"C\" __global__ void run({})", args.join(", "))
         }
 
@@ -103,14 +118,21 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
             let mut text = String::new();
             for (arg_index, arg_name) in args.iter().enumerate() {
                 text.push_str(&format!(".reg .u64 {name}_addr;\n", name = arg_name));
-                text.push_str(&format!("mov.u64   {name}_addr, %{index};\n", name = arg_name, index = arg_index));
+                text.push_str(&format!(
+                    "mov.u64   {name}_addr, %{index};\n",
+                    name = arg_name,
+                    index = arg_index
+                ));
             }
             text
         }
 
         /// Generate CUDA parameter list for inline PTX.
         fn fmt_cuda_inline_ptx_params(args: &[&str]) -> String {
-            args.iter().map(|a| format!(r#""l"({})"#, a)).collect::<Vec<_>>().join(", ")
+            args.iter()
+                .map(|a| format!(r#""l"({})"#, a))
+                .collect::<Vec<_>>()
+                .join(", ")
         }
 
         /// Transform raw PTX into CUDA inline PTX function body.
@@ -120,19 +142,15 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
             // Escape "%" (used for things like %tid (thread id) etc.)
             body = body.replace("%", "%%");
 
-            body = format!(
-                "{}\n{}",
-                fmt_cuda_inline_ptx_params_load(args),
-                body,
-            );
+            body = format!("{}\n{}", fmt_cuda_inline_ptx_params_load(args), body,);
 
-            body = body.lines().map(|l| format!("\"{}\"\n", l)).collect::<Vec<_>>().join("    ");
+            body = body
+                .lines()
+                .map(|l| format!("\"{}\"\n", l))
+                .collect::<Vec<_>>()
+                .join("    ");
 
-            format!(
-                "asm({}    :: {});",
-                body,
-                fmt_cuda_inline_ptx_params(args),
-            )
+            format!("asm({}    :: {});", body, fmt_cuda_inline_ptx_params(args),)
         }
 
         let nvrtc = &self.libs.1;
@@ -145,14 +163,24 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         let source_cuda_c = CString::new(source_cuda.clone()).unwrap();
 
         let mut program = ptr::null_mut();
-        unsafe { nvrtc.nvrtcCreateProgram(&mut program, source_cuda_c.as_ptr() as _, ptr::null() as _, 0, ptr::null(), ptr::null()) }.unwrap();
+        unsafe {
+            nvrtc.nvrtcCreateProgram(
+                &mut program,
+                source_cuda_c.as_ptr() as _,
+                ptr::null() as _,
+                0,
+                ptr::null(),
+                ptr::null(),
+            )
+        }
+        .unwrap();
 
-        let options = [
-            "-arch=sm_90",
-        ].map(|opt| CString::new(opt).unwrap());
+        let options = ["-arch=sm_90"].map(|opt| CString::new(opt).unwrap());
         let options_c: Vec<_> = options.iter().map(|opt| opt.as_c_str().as_ptr()).collect();
 
-        let result = unsafe { nvrtc.nvrtcCompileProgram(program, options_c.len() as _, options_c.as_ptr() as _) };
+        let result = unsafe {
+            nvrtc.nvrtcCompileProgram(program, options_c.len() as _, options_c.as_ptr() as _)
+        };
 
         if result.is_err() {
             let error = unsafe { CStr::from_ptr(nvrtc.nvrtcGetErrorString(result)) };
@@ -187,7 +215,7 @@ impl TestContext for TestFixture<(Cuda, Nvrtc)> {
         let source_ptx_layout = Layout::array::<core::ffi::c_char>(ptx_size).unwrap();
         let source_ptx_buffer = unsafe { alloc(source_ptx_layout) };
 
-        unsafe { nvrtc.nvrtcGetPTX(program, source_ptx_buffer as _ ) }.unwrap();
+        unsafe { nvrtc.nvrtcGetPTX(program, source_ptx_buffer as _) }.unwrap();
 
         let source_ptx = unsafe { CStr::from_ptr(source_ptx_buffer as _) };
         let source_ptx = source_ptx.to_owned();
@@ -210,6 +238,7 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(brev::all_tests());
     tests.extend(cos::all_tests());
     tests.extend(cvt::all_tests());
+    tests.extend(cvt_pack::all_tests());
     tests.extend(cvt_rn_satfinite_f8x2_f32::all_tests());
     tests.extend(cvt_rn_f16x2_f8x2type::all_tests());
     tests.extend(div::all_tests());

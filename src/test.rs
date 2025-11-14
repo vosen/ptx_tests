@@ -93,6 +93,25 @@ impl OnDevice for u8 {
         }
     }
 }
+
+impl OnDevice for i8 {
+    const COMPONENTS: usize = 1;
+
+    fn write(self, buffers: &mut [Vec<u8>]) {
+        buffers[0].extend_from_slice(&self.to_le_bytes());
+    }
+
+    fn read(buffers: &[Vec<u8>], index: usize) -> Self {
+        unsafe {
+            buffers[0]
+                .as_ptr()
+                .cast::<Self>()
+                .add(index)
+                .read_unaligned()
+        }
+    }
+}
+
 impl OnDevice for u16 {
     const COMPONENTS: usize = 1;
 
@@ -110,6 +129,7 @@ impl OnDevice for u16 {
         }
     }
 }
+
 impl OnDevice for i16 {
     const COMPONENTS: usize = 1;
 
@@ -376,6 +396,8 @@ impl DebugRich for bool {
     }
 }
 
+impl_debug_rich!(u8);
+impl_debug_rich!(i8);
 impl_debug_rich!(u16);
 impl_debug_rich!(i16);
 impl_debug_rich!(u32);
@@ -485,6 +507,18 @@ pub trait PtxScalar: Copy + Num + Bounded + Debug + DebugRich + OnDevice + Any {
     }
     fn is_f32() -> bool {
         Self::float() && Self::size_of() == 4
+    }
+}
+
+impl PtxScalar for u8 {
+    fn name() -> &'static str {
+        "u8"
+    }
+}
+
+impl PtxScalar for i8 {
+    fn name() -> &'static str {
+        "s8"
     }
 }
 
@@ -611,7 +645,10 @@ impl Fp8 for F8E5M2 {
         self.to_f64() as f16
     }
     fn is_nan_correct(&self) -> bool {
-        matches!(self.to_bits() & 0b01111111, 0b01111101 | 0b01111110 | 0b01111111)
+        matches!(
+            self.to_bits() & 0b01111111,
+            0b01111101 | 0b01111110 | 0b01111111
+        )
     }
 }
 
@@ -644,7 +681,11 @@ fn load_module<'a>(ctx: &'a dyn TestContext, t: &dyn TestPtx) -> Result<CudaModu
     }
 }
 
-pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<(), TestError> {
+pub fn run_random<Test: RandomTest>(
+    ctx: &dyn TestContext,
+    t: Test,
+    fail_fast: bool,
+) -> Result<(), TestError> {
     let cuda = ctx.cuda();
 
     let module = load_module(ctx, &t)?;
@@ -730,12 +771,15 @@ pub fn run_random<Test: RandomTest>(ctx: &dyn TestContext, t: Test) -> Result<()
         .unwrap();
         for (i, output) in outputs.iter().copied().enumerate() {
             let input = Test::Input::read(&inputs, i);
+            total_cases += 1;
             if let Err(expected) = t.host_verify(input, output) {
                 first_error.get_or_insert((input, output, expected));
+                if fail_fast {
+                    break;
+                }
             } else {
                 passed_cases += 1;
             }
-            total_cases += 1;
         }
     }
 
@@ -762,7 +806,11 @@ fn next_multiple_of(value: usize, multiple: usize) -> usize {
     ((value + multiple - 1) / multiple) * multiple
 }
 
-pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), TestError> {
+pub fn run_range<Test: RangeTest>(
+    ctx: &dyn TestContext,
+    t: Test,
+    fail_fast: bool,
+) -> Result<(), TestError> {
     let cuda = ctx.cuda();
 
     let module = load_module(ctx, &t)?;
@@ -854,12 +902,15 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
         .unwrap();
         for (i, output) in outputs.iter().copied().enumerate() {
             let input = Test::Input::read(&inputs, i);
+            total_cases += 1;
             if let Err(expected) = t.host_verify(input, output) {
                 first_error.get_or_insert((input, output, expected));
+                if fail_fast {
+                    break;
+                }
             } else {
                 passed_cases += 1;
             }
-            total_cases += 1;
         }
     }
 
@@ -876,14 +927,14 @@ pub fn run_range<Test: RangeTest>(ctx: &dyn TestContext, t: Test) -> Result<(), 
     }
 }
 
-pub type TestFunction = Box<dyn FnOnce(&dyn TestContext) -> Result<(), TestError>>;
+pub type TestFunction = Box<dyn FnOnce(&dyn TestContext, bool) -> Result<(), TestError>>;
 
 pub fn make_random<T: RandomTest + 'static>(t: T) -> TestFunction {
-    return Box::new(move |ctx| run_random::<T>(ctx, t));
+    return Box::new(move |ctx, fail_fast| run_random::<T>(ctx, t, fail_fast));
 }
 
 pub fn make_range<T: RangeTest + 'static>(t: T) -> TestFunction {
-    return Box::new(move |ctx| run_range::<T>(ctx, t));
+    return Box::new(move |ctx, fail_fast| run_range::<T>(ctx, t, fail_fast));
 }
 
 pub struct TestCase {
@@ -899,9 +950,9 @@ impl TestCase {
     pub fn join_invalid_tests(name: String, tests: Vec<(String, TestFunction)>) -> Self {
         use TestError::*;
 
-        let test = Box::new(move |ctx: &dyn TestContext| {
+        let test = Box::new(move |ctx: &dyn TestContext, fail_fast: bool| {
             for (name, test) in tests {
-                match test(ctx) {
+                match test(ctx, fail_fast) {
                     Err(CompilationFail { .. } | MissingRunFunction) => {}
                     Ok(()) | Err(ResultMismatch { .. }) => return Err(CompilationSuccess { name }),
                     Err(CompilationSuccess { .. }) => {
@@ -930,5 +981,5 @@ pub enum TestError {
         passed_cases: usize,
     },
     /// Used when `cuModuleGetFunction` fails
-    MissingRunFunction
+    MissingRunFunction,
 }
