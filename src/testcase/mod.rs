@@ -32,6 +32,7 @@ mod mul;
 mod mul24;
 mod mul_f;
 mod neg;
+mod overflow;
 mod prmt;
 mod rcp;
 mod rsqrt;
@@ -266,6 +267,7 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(testp::all_tests());
     tests.extend(vshr::all_tests());
     tests.extend(ex2::all_tests());
+    tests.extend(overflow::all_tests());
 
     tests.sort_unstable_by_key(|t| t.name.clone());
 

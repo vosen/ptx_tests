@@ -1,0 +1,49 @@
+    .version 7.8
+    .target sm_90
+    .address_size 64
+
+.entry run(.param .u64 input_a, .param .u64 input_b, .param .u64 input_c, .param .u64 output)
+{
+.reg .u64    input_a_addr;
+ld.param.u64 input_a_addr, [input_a];
+.reg .u64    input_b_addr;
+ld.param.u64 input_b_addr, [input_b];
+.reg .u64    input_c_addr;
+ld.param.u64 input_c_addr, [input_c];
+.reg .u64    output_addr;
+ld.param.u64 output_addr, [output];
+
+.reg .u32       tid_x;
+.reg .u64       tid_x_64;
+.reg .u32       ntid_x;
+.reg .u32       ctaid_x;
+.reg .u64       global_id_64;
+mov.u32         tid_x, %tid.x;
+cvt.u64.u32     tid_x_64, tid_x;
+mov.u32         ctaid_x, %ctaid.x;
+mov.u32         ntid_x, %ntid.x;
+mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
+
+mad.lo.u64      input_a_addr, global_id_64, 4, input_a_addr;
+mad.lo.u64      input_b_addr, global_id_64, 4, input_b_addr;
+mad.lo.u64      input_c_addr, global_id_64, 4, input_c_addr;
+mad.lo.u64      output_addr,  global_id_64, 8, output_addr;
+
+.reg .u32    a;
+.reg .u32    b;
+.reg .u32       c;
+.reg .u32    value;
+
+ld.u32       a, [input_a_addr];
+ld.u32       b, [input_b_addr];
+ld.u32          c, [input_c_addr];
+
+// set CC.CF
+.reg  .u32      unused;
+add.cc.u32      unused, 0xffffffffffffffffU, c;
+
+addc.cc.u32    value, a, b;
+st.u32          [output_addr], value;
+
+ret;
+}
