@@ -1,6 +1,6 @@
 use crate::test::{make_random, RandomTest, TestCase, TestCommon, TestPtx};
 
-static ADDC_PTX: &str = include_str!("addc.ptx");
+static ADDC_SUBC_PTX: &str = include_str!("addc_subc.ptx");
 
 pub fn all_tests() -> Vec<TestCase> {
     vec![
@@ -43,7 +43,7 @@ struct AddcOrSubc {
 
 impl TestPtx for AddcOrSubc {
     fn body(&self) -> String {
-        ADDC_PTX
+        ADDC_SUBC_PTX
             .replace("<OP>", if self.is_sub { "subc" } else { "addc" })
             .replace("<TYPE>", "u32")
             .replace("<CC>", if self.carry_out { ".cc" } else { "" })
@@ -75,7 +75,11 @@ impl TestCommon for AddcOrSubc {
         let (expected, carry_out_1) = op(a, rhs);
         let mut result = expected as u64;
         let cc_cf = if self.carry_out {
-            !(carry_out_1 || carry_out_2) as u64
+            if self.is_sub {
+                !(carry_out_1 || carry_out_2) as u64
+            } else {
+                (carry_out_1 || carry_out_2) as u64
+            }
         } else {
             carry_in as u64
         };

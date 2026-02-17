@@ -1,0 +1,42 @@
+.reg .u32       tid_x;
+.reg .u64       tid_x_64;
+.reg .u32       ntid_x;
+.reg .u32       ctaid_x;
+.reg .u64       global_id_64;
+mov.u32         tid_x, %tid.x;
+cvt.u64.u32     tid_x_64, tid_x;
+mov.u32         ctaid_x, %ctaid.x;
+mov.u32         ntid_x, %ntid.x;
+mad.wide.u32    global_id_64, ntid_x, ctaid_x, tid_x_64;
+
+mad.lo.u64      input_a_addr, global_id_64, 4, input_a_addr;
+mad.lo.u64      input_b_addr, global_id_64, 4, input_b_addr;
+mad.lo.u64      input_c_addr, global_id_64, 4, input_c_addr;
+mad.lo.u64      input_d_addr, global_id_64, 4, input_d_addr;
+mad.lo.u64      output_addr,  global_id_64, 8, output_addr;
+
+.reg .u32 a;
+.reg .u32 b;
+.reg .u32 c;
+.reg .u32 d;
+.reg .b32 sum;
+.reg .b64 result;
+
+ld.u32          a, [input_a_addr];
+ld.u32          b, [input_b_addr];
+ld.u32          c, [input_c_addr];
+ld.u32          d, [input_d_addr];
+
+// set CC.CF
+.reg  .b32      cc_cf;
+add.cc.u32      cc_cf, 0xffffffffffffffffU, d;
+
+// operation
+madc.lo<CC>.u32    sum, a, b, c;
+
+// read CC.CF and concatenate
+addc.u32        cc_cf, 0, 0;
+
+// save
+mov.b64         result, {sum, cc_cf};
+st.b64          [output_addr], result;

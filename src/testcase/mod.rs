@@ -13,6 +13,7 @@ use crate::{
 mod abs;
 mod add;
 mod add_f;
+mod addc_subc;
 mod bfe;
 mod bfi;
 mod brev;
@@ -27,12 +28,12 @@ mod ex2;
 mod fma_f;
 mod lg2;
 mod mad;
+mod madc;
 mod minmax;
 mod mul;
 mod mul24;
 mod mul_f;
 mod neg;
-mod overflow;
 mod prmt;
 mod rcp;
 mod rsqrt;
@@ -267,7 +268,8 @@ pub fn tests() -> Vec<TestCase> {
     tests.extend(testp::all_tests());
     tests.extend(vshr::all_tests());
     tests.extend(ex2::all_tests());
-    tests.extend(overflow::all_tests());
+    tests.extend(addc_subc::all_tests());
+    tests.extend(madc::all_tests());
 
     tests.sort_unstable_by_key(|t| t.name.clone());
 
