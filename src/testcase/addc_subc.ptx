@@ -14,22 +14,22 @@ mad.lo.u64      input_b_addr, global_id_64, 4, input_b_addr;
 mad.lo.u64      input_c_addr, global_id_64, 4, input_c_addr;
 mad.lo.u64      output_addr,  global_id_64, 8, output_addr;
 
-.reg .u32 a;
-.reg .u32 b;
-.reg .u32    c;
+.reg .b32 a;
+.reg .b32 b;
+.reg .b32    c;
 .reg .b32 sum;
 .reg .b64    result;
 
-ld.u32       a, [input_a_addr];
-ld.u32       b, [input_b_addr];
-ld.u32          c, [input_c_addr];
+ld.b32       a, [input_a_addr];
+ld.b32       b, [input_b_addr];
+ld.b32          c, [input_c_addr];
 
 // set CC.CF
 .reg  .b32      cc_cf;
 add.cc.u32      cc_cf, 0xffffffffffffffffU, c;
 
 // operation
-<OP><CC>.u32 sum, a, b;
+<OP><CC>.<TYPE> sum, a, b;
 
 // read CC.CF and concatenate
 addc.u32        cc_cf, 0, 0;

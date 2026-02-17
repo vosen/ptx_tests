@@ -4,31 +4,66 @@ static ADDC_SUBC_PTX: &str = include_str!("addc_subc.ptx");
 
 pub fn all_tests() -> Vec<TestCase> {
     vec![
-        //TestCase::new("add_cc".to_string(), make_random(AddCC)),
         TestCase::new(
-            "addc".to_string(),
+            "addc_u32".to_string(),
             make_random(AddcOrSubc {
+                type_: "u32",
                 carry_out: false,
                 is_sub: false,
             }),
         ),
         TestCase::new(
-            "addc_cc".to_string(),
+            "addc_cc_u32".to_string(),
             make_random(AddcOrSubc {
+                type_: "u32",
                 carry_out: true,
                 is_sub: false,
             }),
         ),
         TestCase::new(
-            "subc".to_string(),
+            "subc_u32".to_string(),
             make_random(AddcOrSubc {
+                type_: "u32",
                 carry_out: false,
                 is_sub: true,
             }),
         ),
         TestCase::new(
-            "subc_cc".to_string(),
+            "subc_cc_u32".to_string(),
             make_random(AddcOrSubc {
+                type_: "u32",
+                carry_out: true,
+                is_sub: true,
+            }),
+        ),
+        TestCase::new(
+            "addc_s32".to_string(),
+            make_random(AddcOrSubc {
+                type_: "s32",
+                carry_out: false,
+                is_sub: false,
+            }),
+        ),
+        TestCase::new(
+            "addc_cc_s32".to_string(),
+            make_random(AddcOrSubc {
+                type_: "s32",
+                carry_out: true,
+                is_sub: false,
+            }),
+        ),
+        TestCase::new(
+            "subc_s32".to_string(),
+            make_random(AddcOrSubc {
+                type_: "s32",
+                carry_out: false,
+                is_sub: true,
+            }),
+        ),
+        TestCase::new(
+            "subc_cc_s32".to_string(),
+            make_random(AddcOrSubc {
+                type_: "s32",
                 carry_out: true,
                 is_sub: true,
             }),
@@ -39,13 +74,14 @@ pub fn all_tests() -> Vec<TestCase> {
 struct AddcOrSubc {
     is_sub: bool,
     carry_out: bool,
+    type_: &'static str,
 }
 
 impl TestPtx for AddcOrSubc {
     fn body(&self) -> String {
         ADDC_SUBC_PTX
             .replace("<OP>", if self.is_sub { "subc" } else { "addc" })
-            .replace("<TYPE>", "u32")
+            .replace("<TYPE>", self.type_)
             .replace("<CC>", if self.carry_out { ".cc" } else { "" })
     }
 

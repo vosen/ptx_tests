@@ -4,18 +4,46 @@ static PTX: &str = include_str!("madc.ptx");
 
 pub fn all_tests() -> Vec<TestCase> {
     vec![
-        TestCase::new("madc".to_string(), make_random(Madc { carry_out: false })),
-        TestCase::new("madc_cc".to_string(), make_random(Madc { carry_out: true })),
+        TestCase::new(
+            "madc_u32".to_string(),
+            make_random(Madc {
+                carry_out: false,
+                type_: "u32",
+            }),
+        ),
+        TestCase::new(
+            "madc_cc_u32".to_string(),
+            make_random(Madc {
+                carry_out: true,
+                type_: "u32",
+            }),
+        ),
+        TestCase::new(
+            "madc_s32".to_string(),
+            make_random(Madc {
+                carry_out: false,
+                type_: "s32",
+            }),
+        ),
+        TestCase::new(
+            "madc_cc_s32".to_string(),
+            make_random(Madc {
+                carry_out: true,
+                type_: "s32",
+            }),
+        ),
     ]
 }
 
 struct Madc {
     carry_out: bool,
+    type_: &'static str,
 }
 
 impl TestPtx for Madc {
     fn body(&self) -> String {
-        PTX.replace("<CC>", if self.carry_out { ".cc" } else { "" })
+        PTX.replace("<TYPE>", self.type_)
+            .replace("<CC>", if self.carry_out { ".cc" } else { "" })
     }
 
     fn args(&self) -> &[&str] {
